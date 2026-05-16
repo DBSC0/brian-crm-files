@@ -1,0 +1,6 @@
+Poner aquí el archivo icon.ico (256x256 píxeles) para el ícono del .exe.
+
+Si no tenés un .ico, podés convertir cualquier imagen PNG a ICO en:
+  https://convertico.com  (gratis, sube el PNG y descarga el ICO)
+
+El archivo debe llamarse exactamente: icon.ico

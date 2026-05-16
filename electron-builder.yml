@@ -1,0 +1,35 @@
+appId: com.brianfacciano.crm
+productName: Brian CRM
+copyright: Copyright 2026 Brian Facciano
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - electron/**/*
+  - Brian CRM.html
+  - components/**/*
+  - screens/**/*
+  - data/**/*
+  - version.txt
+  - node_modules/**/*
+  - "!node_modules/.cache/**/*"
+  - "!node_modules/electron/**/*"
+  - "!node_modules/electron-builder/**/*"
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Brian CRM
+  deleteAppDataOnUninstall: false
+
+asar: false

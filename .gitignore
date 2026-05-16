@@ -1,0 +1,4 @@
+node_modules/
+dist/
+electron/updater.js.bak
+*.log

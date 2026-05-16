@@ -1,0 +1,17 @@
+{
+  "name": "brian-crm",
+  "version": "1.0.0",
+  "description": "Brian CRM — Sistema de Gestión Financiera",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "SET ELECTRON_RUN_AS_NODE=&& electron .",
+    "build": "SET ELECTRON_RUN_AS_NODE=&& electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

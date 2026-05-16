@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brian Facciano CRM — Sistema Financiero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'DM Sans', sans-serif; background: #f8fafc; color: #0f172a; }
+    #root { height: 100%; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    @media print {
+      nav, aside, header, .no-print { display: none !important; }
+      body { background: white; }
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .screen-enter { animation: fadeIn 0.18s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Supabase (debe ir ANTES de React y los componentes) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="components/supabase-client.js"></script>
+
+<!-- React -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<!-- Helpers de datos + carga async desde Supabase -->
+<script type="text/babel">
+// ─── MAPEO camelCase (React) ↔ snake_case (Postgres) ─────────────────────────
+const KEY_MAP = {
+  // clients
+  telefono_secundario: 'telefonoSecundario',
+  created_at: 'createdAt',
+  // operations
+  client_id: 'clientId',
+  costo_real: 'costoReal',
+  monto_pactado: 'montoPactado',
+  monto_financiado: 'montoFinanciado',
+  cantidad_cuotas: 'cantidadCuotas',
+  tasa_interes: 'tasaInteres',
+  interes_calculado: 'interesCalculado',
+  total_financiado: 'totalFinanciado',
+  valor_cuota: 'valorCuota',
+  total_esperado: 'totalEsperado',
+  ganancia_esperada: 'gananciaEsperada',
+  fuente_financiacion: 'fuenteFinanciacion',
+  credit_card_id: 'creditCardId',
+  fecha_inicio: 'fechaInicio',
+  primer_vencimiento: 'primerVencimiento',
+  // installments
+  operation_id: 'operationId',
+  numero_cuota: 'numeroCuota',
+  total_cuotas: 'totalCuotas',
+  fecha_vencimiento: 'fechaVencimiento',
+  monto_programado: 'montoProgramado',
+  monto_pagado: 'montoPagado',
+  saldo_pendiente: 'saldoPendiente',
+  mora_aplicada: 'moraAplicada',
+  // payments
+  fecha_pago: 'fechaPago',
+  metodo_pago: 'metodoPago',
+  receipt_id: 'receiptId',
+  // receipts
+  payment_id: 'paymentId',
+  // payment_allocations
+  installment_id: 'installmentId',
+  monto_aplicado: 'montoAplicado',
+  // credit_cards
+  ultimos_digitos: 'ultimosDigitos',
+  limite_total: 'limiteTotal',
+  limite_disponible_estimado: 'limiteDisponibleEstimado',
+  dia_cierre: 'diaCierre',
+  dia_vencimiento: 'diaVencimiento',
+  // credit_card_movements
+  fecha_compra: 'fechaCompra',
+  cuotas_tarjeta: 'cuotasTarjeta',
+  cuota_actual_tarjeta: 'cuotaActualTarjeta',
+  fecha_cierre_estimada: 'fechaCierreEstimada',
+  fecha_vencimiento_estimada: 'fechaVencimientoEstimada',
+  // attachments
+  nombre_archivo: 'nombreArchivo',
+  url_mock: 'urlMock',
+  credit_card_movement_id: 'creditCardMovementId',
+  // app_settings
+  tasas_por_cuotas: 'tasasPorCuotas',
+  metodos_pago: 'metodosPago',
+  estados_cliente: 'estadosCliente',
+  estados_operacion: 'estadosOperacion',
+  estados_cuota: 'estadosCuota',
+  estados_tarjeta: 'estadosTarjeta',
+  tipos_operacion: 'tiposOperacion',
+  datos_prestamista: 'datosPrestamista',
+  plantillas_whatsapp: 'plantillasWhatsapp',
+  parametros_financieros: 'parametrosFinancieros',
+};
+
+const KEY_MAP_REVERSE = Object.fromEntries(
+  Object.entries(KEY_MAP).map(([snake, camel]) => [camel, snake])
+);
+
+function toCamel(row) {
+  if (!row || typeof row !== 'object') return row;
+  const out = {};
+  for (const [k, v] of Object.entries(row)) {
+    out[KEY_MAP[k] || k] = v;
+  }
+  return out;
+}
+function rowsToCamel(rows) { return (rows || []).map(toCamel); }
+
+function toSnake(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[KEY_MAP_REVERSE[k] || k] = v;
+  }
+  return out;
+}
+
+// ─── CARGA ASYNC DESDE SUPABASE ───────────────────────────────────────────────
+const sb = window.__supabase;
+
+async function loadAllData() {
+  const [
+    { data: clients,    error: e1  },
+    { data: operations, error: e2  },
+    { data: installments, error: e3 },
+    { data: payments,   error: e4  },
+    { data: paymentAllocations, error: e5 },
+    { data: receipts,   error: e6  },
+    { data: vouchers,   error: e7  },
+    { data: creditCards, error: e8 },
+    { data: ccMovements, error: e9 },
+    { data: cashMovements, error: e10 },
+    { data: clientNotes, error: e11 },
+    { data: attachments, error: e12 },
+    { data: settingsRow, error: e13 },
+    { data: ccStmtPayments, error: e14 },
+  ] = await Promise.all([
+    sb.from('clients').select('*').order('created_at'),
+    sb.from('operations').select('*').order('fecha_inicio'),
+    sb.from('installments').select('*').order('fecha_vencimiento'),
+    sb.from('payments').select('*').order('fecha_pago'),
+    sb.from('payment_allocations').select('*'),
+    sb.from('receipts').select('*').order('fecha'),
+    sb.from('internal_operation_vouchers').select('*').order('fecha'),
+    sb.from('credit_cards').select('*'),
+    sb.from('credit_card_movements').select('*').order('fecha_compra'),
+    sb.from('cash_movements').select('*').order('fecha'),
+    sb.from('client_notes').select('*').order('fecha'),
+    sb.from('attachments').select('*').order('fecha'),
+    sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
+    sb.from('credit_card_statement_payments').select('*').order('año').order('mes'),
+  ]);
+
+  const tableNames = ['clients','operations','installments','payments','payment_allocations','receipts','internal_operation_vouchers','credit_cards','credit_card_movements','cash_movements','client_notes','attachments','app_settings','credit_card_statement_payments'];
+  const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14];
+  const firstError = errors.find(Boolean);
+  if (firstError) {
+    const idx = errors.indexOf(firstError);
+    throw new Error(`[${tableNames[idx]}] ${firstError.message}`);
+  }
+
+  const sr = settingsRow ? toCamel(settingsRow) : {};
+  const settings = {
+    tasasPorCuotas:        sr.tasasPorCuotas       || [],
+    metodosPago:           sr.metodosPago          || [],
+    estadosCliente:        sr.estadosCliente        || [],
+    estadosOperacion:      sr.estadosOperacion      || [],
+    estadosCuota:          sr.estadosCuota          || [],
+    estadosTarjeta:        sr.estadosTarjeta        || [],
+    tiposOperacion:        sr.tiposOperacion        || [],
+    datosPrestamista:      sr.datosPrestamista      || {},
+    plantillasWhatsapp:    sr.plantillasWhatsapp    || [],
+    parametrosFinancieros: sr.parametrosFinancieros || {},
+  };
+
+  return {
+    settings,
+    clients:                   rowsToCamel(clients),
+    operations:                rowsToCamel(operations),
+    installments:              rowsToCamel(installments),
+    payments:                  rowsToCamel(payments),
+    paymentAllocations:        rowsToCamel(paymentAllocations),
+    receipts:                  rowsToCamel(receipts),
+    internalOperationVouchers: rowsToCamel(vouchers),
+    creditCards:                    rowsToCamel(creditCards),
+    creditCardMovements:            rowsToCamel(ccMovements),
+    creditCardStatementPayments:    rowsToCamel(ccStmtPayments || []),
+    cashMovements:                  rowsToCamel(cashMovements),
+    clientNotes:               rowsToCamel(clientNotes),
+    attachments:               rowsToCamel(attachments),
+  };
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function formatCurrency(amount) {
+  if (amount == null || isNaN(amount)) return '$0';
+  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+}
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split('T')[0];
+}
+function calculateOverdueDays(fechaVencimiento) {
+  const today = new Date();
+  const due = new Date(fechaVencimiento);
+  const diff = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+  return diff > 0 ? diff : 0;
+}
+function calculateOperationTotals(costoReal, montoPactado, entrega, cuotas, tasa) {
+  const montoFinanciado = montoPactado - entrega;
+  const interes = montoFinanciado * (tasa / 100);
+  const totalFinanciado = montoFinanciado + interes;
+  const valorCuota = Math.ceil(totalFinanciado / cuotas);
+  const totalEsperado = entrega + totalFinanciado;
+  const gananciaEsperada = totalEsperado - costoReal;
+  return { montoFinanciado, interesCalculado: interes, totalFinanciado, valorCuota, totalEsperado, gananciaEsperada };
+}
+function calculateClientBalance(clientId, insts, pays, ops) {
+  const ci = insts.filter(i => i.clientId === clientId);
+  const co = ops.filter(o => o.clientId === clientId);
+  const cp = pays.filter(p => p.clientId === clientId);
+  const today = new Date();
+  const vencidas = ci.filter(i => new Date(i.fechaVencimiento) < today && i.saldoPendiente > 0);
+  return {
+    totalPactado: co.reduce((s, o) => s + o.totalEsperado, 0),
+    saldoPendiente: ci.reduce((s, i) => s + i.saldoPendiente, 0),
+    totalPagado: cp.reduce((s, p) => s + p.monto, 0),
+    montoVencido: vencidas.reduce((s, i) => s + i.saldoPendiente, 0),
+    capitalInvertido: co.reduce((s, o) => s + o.costoReal, 0),
+    gananciaEsperada: co.reduce((s, o) => s + o.gananciaEsperada, 0),
+    opActivas: co.filter(o => o.estado === 'Activa').length,
+    nextInst: ci.filter(i => i.saldoPendiente > 0).sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento))[0],
+    lastPay: cp.sort((a, b) => b.fechaPago.localeCompare(a.fechaPago))[0],
+  };
+}
+function getDashboardMetrics(cls, ops, insts, pays, cards, ccMovs) {
+  const today = new Date();
+  const thisMonth = today.toISOString().slice(0, 7);
+  const vencidas = insts.filter(i => new Date(i.fechaVencimiento) < today && i.saldoPendiente > 0);
+  const next15 = new Date(); next15.setDate(next15.getDate() + 15);
+  const proxVencimientos = insts.filter(i => {
+    const d = new Date(i.fechaVencimiento);
+    return d >= today && d <= next15 && i.saldoPendiente > 0;
+  }).sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento));
+  return {
+    capitalInvertido: ops.reduce((s, o) => s + o.costoReal, 0),
+    totalEsperado: ops.reduce((s, o) => s + o.totalEsperado, 0),
+    saldoPendiente: insts.reduce((s, i) => s + i.saldoPendiente, 0),
+    montoVencido: vencidas.reduce((s, i) => s + i.saldoPendiente, 0),
+    clientesEnMora: new Set(vencidas.map(i => i.clientId)).size,
+    cobradoEsteMes: pays.filter(p => p.fechaPago.startsWith(thisMonth)).reduce((s, p) => s + p.monto, 0),
+    gananciaEsperada: ops.reduce((s, o) => s + o.gananciaEsperada, 0),
+    gananciaRealizada: pays.reduce((s, p) => s + p.monto, 0) - ops.reduce((s, o) => s + o.costoReal, 0),
+    capitalEfectivo: ops.filter(o => o.fuenteFinanciacion !== 'Tarjeta de crédito').reduce((s, o) => s + o.costoReal, 0),
+    capitalTarjeta: ops.filter(o => o.fuenteFinanciacion === 'Tarjeta de crédito').reduce((s, o) => s + o.costoReal, 0),
+    proxVencimientos,
+    vencidas,
+  };
+}
+
+
+</script>
+
+<!-- Components -->
+<script type="text/babel" src="components/StatusBadge.jsx"></script>
+<script type="text/babel" src="components/UI.jsx"></script>
+<script type="text/babel" src="components/Layout.jsx"></script>
+<script type="text/babel" src="screens/Dashboard.jsx"></script>
+<script type="text/babel" src="screens/Clientes.jsx"></script>
+<script type="text/babel" src="screens/Operaciones.jsx"></script>
+<script type="text/babel" src="screens/CuotasPagosRecibos.jsx"></script>
+<script type="text/babel" src="screens/Tarjetas.jsx"></script>
+<script type="text/babel" src="screens/CajaMora.jsx"></script>
+<script type="text/babel" src="screens/Reportes.jsx"></script>
+<script type="text/babel" src="screens/Configuracion.jsx"></script>
+
+<!-- Main App -->
+<script type="text/babel">
+function App() {
+  const [appData, setAppData] = React.useState(null);
+  const [loadError, setLoadError] = React.useState(null);
+  const [nav, setNav] = React.useState({ screen: 'dashboard', id: null, modal: null, extra: null });
+
+  React.useEffect(() => {
+    loadAllData()
+      .then(data => setAppData(data))
+      .catch(err  => setLoadError(err.message));
+  }, []);
+
+  if (loadError) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
+                    height:'100vh', flexDirection:'column', gap:16, fontFamily:'DM Sans, sans-serif' }}>
+        <div style={{ fontSize:32 }}>⚠️</div>
+        <div style={{ fontSize:16, fontWeight:700, color:'#dc2626' }}>Error al conectar con Supabase</div>
+        <div style={{ fontSize:13, color:'#64748b', maxWidth:400, textAlign:'center' }}>{loadError}</div>
+        <button onClick={() => { setLoadError(null); loadAllData().then(setAppData).catch(e => setLoadError(e.message)); }}
+          style={{ padding:'8px 20px', background:'#4f46e5', color:'#fff', border:'none',
+                   borderRadius:8, cursor:'pointer', fontWeight:600, fontSize:14 }}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (!appData) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
+                    height:'100vh', flexDirection:'column', gap:12, fontFamily:'DM Sans, sans-serif' }}>
+        <div style={{ width:40, height:40, border:'3px solid #e2e8f0',
+                      borderTop:'3px solid #4f46e5', borderRadius:'50%',
+                      animation:'spin 0.8s linear infinite' }}/>
+        <div style={{ fontSize:14, color:'#64748b', fontWeight:500 }}>Cargando datos…</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  function onNav(screen, id = null, modal = null, extra = null, extra2 = null) {
+    setNav({ screen, id, modal, extra, extra2 });
+    const main = document.querySelector('main');
+    if (main) main.scrollTop = 0;
+  }
+
+  function onDataChange(key, value) {
+    setAppData(prev => ({ ...prev, [key]: value }));
+  }
+
+  const searchData = {
+    clients: appData.clients,
+    operations: appData.operations,
+    installments: appData.installments,
+    creditCards: appData.creditCards,
+  };
+
+  function renderScreen() {
+    const { screen, id, modal, extra, extra2 } = nav;
+    switch (screen) {
+      case 'dashboard':
+        return <DashboardScreen data={appData} onNav={onNav} />;
+      case 'clientes':
+        if (id) return <ClienteDetalleScreen clientId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        return <ClientesScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+      case 'operaciones':
+        if (id) return <OperacionDetalleScreen operationId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        return <OperacionesScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} />;
+      case 'cuotas':
+        return <CuotasScreen data={appData} onNav={onNav} />;
+      case 'pagos':
+        return <PagosScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} />;
+      case 'recibos':
+        return <RecibosScreen data={appData} onNav={onNav} onDataChange={onDataChange} receiptsFilter={id} />;
+      case 'tarjetas':
+        if (id) return <TarjetaDetalleScreen cardId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        return <TarjetasScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+      case 'caja':
+        return <CajaScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+      case 'mora':
+        return <MoraScreen data={appData} onNav={onNav} />;
+      case 'reportes':
+        return <ReportesScreen data={appData} />;
+      case 'configuracion':
+        return <ConfiguracionScreen data={appData} onDataChange={onDataChange} />;
+      case 'comprobantes':
+        if (id) {
+          const voucher = appData.internalOperationVouchers.find(v => v.id === id);
+          if (voucher) {
+            const op = appData.operations.find(o => o.id === voucher.operationId);
+            const client = appData.clients.find(c => c.id === voucher.clientId);
+            return (
+              <div>
+                <div style={{ marginBottom: 16 }}>
+                  <Btn variant="ghost" size="sm" onClick={() => window.history.back ? onNav('operaciones', voucher.operationId) : onNav('operaciones')}>← Volver</Btn>
+                </div>
+                <InternalVoucherPreview op={op} client={client} voucher={voucher} installments={appData.installments} />
+              </div>
+            );
+          }
+        }
+        return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Comprobante no encontrado.</div>;
+      default:
+        return <DashboardScreen data={appData} onNav={onNav} />;
+    }
+  }
+
+  return (
+    <AppLayout current={nav.screen} onNav={onNav} searchData={searchData}>
+      <div className="screen-enter" key={nav.screen + (nav.id || '')}>
+        {renderScreen()}
+      </div>
+    </AppLayout>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
