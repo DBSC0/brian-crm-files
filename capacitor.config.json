@@ -1,0 +1,11 @@
+{
+  "appId": "com.brianfacciano.crm",
+  "appName": "Brian CRM",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

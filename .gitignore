@@ -1,4 +1,6 @@
 node_modules/
 dist/
+android/
+www/
 electron/updater.js.bak
 *.log
