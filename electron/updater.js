@@ -14,7 +14,7 @@ const GITHUB_BRANCH = 'main';
 const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}`;
 
 const CONTENT_FILES = [
-  'Brian CRM.html',
+  'index.html',
   'components/supabase-client.js',
   'components/Layout.jsx',
   'components/StatusBadge.jsx',
@@ -24,6 +24,7 @@ const CONTENT_FILES = [
   'screens/Configuracion.jsx',
   'screens/CuotasPagosRecibos.jsx',
   'screens/Dashboard.jsx',
+  'screens/ImportarDatos.jsx',
   'screens/Operaciones.jsx',
   'screens/Reportes.jsx',
   'screens/Tarjetas.jsx',

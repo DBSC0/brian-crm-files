@@ -8,7 +8,7 @@ directories:
 
 files:
   - electron/**/*
-  - Brian CRM.html
+  - index.html
   - components/**/*
   - screens/**/*
   - data/**/*

@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 >nul
 echo.
 echo ========================================
 echo    Brian CRM -- Publicar Actualizacion
@@ -29,10 +28,7 @@ for /f "tokens=1-4 delims=-" %%a in ("%VERSION_ACTUAL%") do (
 set FECHA_VERSION=%AÑO%-%MES%-%DIA%
 
 :: Obtener fecha de hoy
-for /f "tokens=2 delims==" %%a in ('wmic os get LocalDateTime /value 2^>nul') do (
-    if not "%%a"=="" set DT=%%a
-)
-set HOY=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set HOY=%%a
 
 :: Si la fecha cambio, resetear secuencia; si no, incrementar
 if "%FECHA_VERSION%"=="%HOY%" (

@@ -26,6 +26,9 @@
 <body>
 <div id="root"></div>
 
+<!-- SheetJS para importación de Excel (local, no requiere internet) -->
+<script src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
+
 <!-- Supabase (debe ir ANTES de React y los componentes) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="components/supabase-client.js"></script>
@@ -293,6 +296,7 @@ function getDashboardMetrics(cls, ops, insts, pays, cards, ccMovs) {
 <script type="text/babel" src="screens/CajaMora.jsx"></script>
 <script type="text/babel" src="screens/Reportes.jsx"></script>
 <script type="text/babel" src="screens/Configuracion.jsx"></script>
+<script type="text/babel" src="screens/ImportarDatos.jsx"></script>
 
 <!-- Main App -->
 <script type="text/babel">
@@ -381,6 +385,8 @@ function App() {
         return <ReportesScreen data={appData} />;
       case 'configuracion':
         return <ConfiguracionScreen data={appData} onDataChange={onDataChange} />;
+      case 'importar':
+        return <ImportarDatosScreen onDataChange={onDataChange} />;
       case 'comprobantes':
         if (id) {
           const voucher = appData.internalOperationVouchers.find(v => v.id === id);

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { id: 'mora', label: 'Mora', icon: '⚠️' },
   { id: 'reportes', label: 'Reportes', icon: '📊' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙️' },
+  { id: 'importar', label: 'Importar Excel', icon: '📥' },
 ];
 
 function Sidebar({ current, onNav, collapsed, onToggle }) {

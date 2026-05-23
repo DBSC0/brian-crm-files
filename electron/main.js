@@ -92,7 +92,7 @@ function createMainWindow(appPort) {
     },
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${appPort}/Brian%20CRM.html`);
+  mainWindow.loadURL(`http://127.0.0.1:${appPort}/index.html`);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
