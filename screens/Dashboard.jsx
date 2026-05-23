@@ -118,7 +118,7 @@ function SummaryHeroCard({ metrics, activeOperations, isMobile }) {
   const details = [
     { label: 'Total a recuperar', value: formatCurrency(metrics.totalEsperado) },
     { label: 'Ganancia proyectada', value: formatCurrency(metrics.gananciaEsperada) },
-    { label: 'Operaciones activas', value: activeOperations },
+    { label: 'Operaciones activas', value: maskSensitiveNumber(activeOperations) },
   ];
   return (
     <Card style={{
@@ -184,9 +184,9 @@ function SummaryHeroCard({ metrics, activeOperations, isMobile }) {
 function AlertCard({ metrics, onNav, hidden, editMode, onToggle, isMobile }) {
   if (hidden && !editMode) return null;
   const alertRows = [
-    { icon: 'bell', label: `${metrics.clientesEnMora} cliente${metrics.clientesEnMora === 1 ? '' : 's'} en mora`, color: '#dc2626', bg: '#fef2f2' },
+    { icon: 'bell', label: `${maskSensitiveNumber(metrics.clientesEnMora)} cliente${metrics.clientesEnMora === 1 ? '' : 's'} en mora`, color: '#dc2626', bg: '#fef2f2' },
     { icon: 'coin', label: `${formatCurrency(metrics.montoVencido)} vencidos`, color: '#dc2626', bg: '#fef2f2' },
-    { icon: 'calendar', label: `${metrics.proxVencimientos.length} vencimientos pr\u00f3ximos en 15 d\u00edas`, color: '#ea580c', bg: '#fff7ed' },
+    { icon: 'calendar', label: `${maskSensitiveNumber(metrics.proxVencimientos.length)} vencimientos pr\u00f3ximos en ${maskSensitiveNumber(15)} d\u00edas`, color: '#ea580c', bg: '#fff7ed' },
   ];
   return (
     <div style={{ position: 'relative', opacity: hidden ? 0.45 : 1 }}>
@@ -243,6 +243,7 @@ function AlertCard({ metrics, onNav, hidden, editMode, onToggle, isMobile }) {
 
 function MetricCard({ id, title, value, icon, color, bg, hidden, editMode, onToggle }) {
   if (hidden && !editMode) return null;
+  const displayValue = typeof maskSensitiveText === 'function' ? maskSensitiveText(value) : value;
   return (
     <div style={{ position: 'relative', minWidth: 0, opacity: hidden ? 0.45 : 1 }}>
       <SummaryToggle id={id} hidden={hidden} editMode={editMode} onToggle={onToggle} />
@@ -268,7 +269,7 @@ function MetricCard({ id, title, value, icon, color, bg, hidden, editMode, onTog
             fontFamily: 'DM Mono, monospace', lineHeight: 1.15,
             overflowWrap: 'anywhere',
           }}>
-            {value}
+            {displayValue}
           </div>
         </div>
         <div style={{ color: '#94a3b8', fontSize: 22, lineHeight: 1, flexShrink: 0 }}>&rsaquo;</div>
@@ -320,7 +321,7 @@ function SummarySection({ metrics, operations, onNav }) {
     [
       { id: 'capitalEfectivo', title: 'Disponible en efectivo', value: formatCurrency(metrics.capitalEfectivo), icon: 'wallet', color: '#0f766e', bg: '#dcfce7' },
       { id: 'capitalTarjeta', title: 'Disponible en tarjeta', value: formatCurrency(metrics.capitalTarjeta), icon: 'card', color: '#2563eb', bg: '#dbeafe' },
-      { id: 'proxVencimientos', title: 'Vencimientos pr\u00f3ximos', value: `${metrics.proxVencimientos.length} cuotas en 15 d\u00edas`, icon: 'calendar', color: '#ea580c', bg: '#ffedd5' },
+      { id: 'proxVencimientos', title: 'Vencimientos pr\u00f3ximos', value: `${maskSensitiveNumber(metrics.proxVencimientos.length)} cuotas en ${maskSensitiveNumber(15)} d\u00edas`, icon: 'calendar', color: '#ea580c', bg: '#ffedd5' },
     ],
   ];
 
@@ -425,7 +426,7 @@ function DashboardScreen({ data, onNav }) {
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>📅 Próximos vencimientos (15 días)</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>📅 Próximos vencimientos ({maskSensitiveNumber(15)} días)</span>
               {metrics.proxVencimientos.length > 0 && (
                 <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: 6 }}>
                   {formatCurrency(metrics.proxVencimientos.reduce((s, i) => s + i.saldoPendiente, 0))}
@@ -451,7 +452,7 @@ function DashboardScreen({ data, onNav }) {
                   }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', fontFamily: 'DM Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client?.nombre}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{op?.codigo} · Cuota {inst.numeroCuota}/{inst.totalCuotas}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{op?.codigo} · Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(inst.saldoPendiente)}</div>
@@ -489,13 +490,13 @@ function DashboardScreen({ data, onNav }) {
                   <div key={clientId} style={{ padding: '10px 16px', borderBottom: '1px solid #f8fafc', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>{client?.nombre}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{info.cuotas.length} cuota(s) · {info.maxDays} días de atraso</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{maskSensitiveNumber(info.cuotas.length)} cuota(s) · {maskSensitiveNumber(info.maxDays)} días de atraso</div>
                       {lastNote && <div style={{ fontSize: 10, color: '#94a3b8' }}>Último contacto: {formatDate(lastNote.fecha)}</div>}
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(info.monto)}</div>
                     </div>
-                    <WAButton phone={client?.telefono || ''} message={`Hola ${client?.nombre}, te escribo por cuotas vencidas por ${formatCurrency(info.monto)}. ¿Podemos coordinar el pago?`} />
+                    <WAButton phone={client?.telefono || ''} message={`Hola ${client?.nombre}, te escribo por cuotas vencidas por ${formatCurrencyRaw(info.monto)}. ¿Podemos coordinar el pago?`} />
                   </div>
                 );
               })}

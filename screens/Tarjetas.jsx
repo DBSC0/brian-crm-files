@@ -252,7 +252,7 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
                   <div style={{ height: '100%', width: `${Math.min(Math.max(pct, 0), 100)}%`, background: pct > 80 ? '#dc2626' : pct > 60 ? '#d97706' : '#4f46e5', borderRadius: 3, transition: 'width 0.3s' }} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#94a3b8' }}>
-                  <span>Deuda neta: {formatCurrency(netDebt)} ({Math.max(pct, 0).toFixed(0)}%)</span>
+                  <span>Deuda neta: {formatCurrency(netDebt)} ({maskSensitiveNumber(Math.max(pct, 0).toFixed(0), '%')})</span>
                   <span>{movs.length} movimiento{movs.length !== 1 ? 's' : ''}</span>
                 </div>
               </div>
@@ -474,7 +474,7 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
               { key: 'descripcion', label: 'Descripción' },
               { key: 'monto', label: 'Monto', mono: true, render: v => formatCurrency(v) },
               { key: 'cuotasTarjeta', label: 'Cuotas TC' },
-              { key: 'cuotaActualTarjeta', label: 'Cuota actual', render: (v, row) => `${v}/${row.cuotasTarjeta}` },
+              { key: 'cuotaActualTarjeta', label: 'Cuota actual', render: (v, row) => `${maskSensitiveNumber(v)}/${maskSensitiveNumber(row.cuotasTarjeta)}` },
               { key: 'fechaVencimientoEstimada', label: 'Próx. venc.', render: (v, row) => {
                 if (row.estado !== 'Activo') return <span style={{ color: '#94a3b8' }}>—</span>;
                 return <span>{formatDate(computeNextVencimiento(row, creditCards))}</span>;

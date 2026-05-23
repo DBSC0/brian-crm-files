@@ -208,12 +208,201 @@ function ClientesScreen({ data, onNav, onDataChange }) {
               <option value="">Todos los riesgos</option>
               {['Bajo','Medio','Alto'].map(r => <option key={r}>{r}</option>)}
             </select>
-            <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif' }}>{filtered.length} cliente{filtered.length !== 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif' }}>{maskSensitiveNumber(filtered.length)} cliente{filtered.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
         <DataTable columns={columns} data={filtered} onRowClick={row => onNav('clientes', row.id)} emptyMessage="No se encontraron clientes" defaultSortKey="codigo" defaultSortDir="asc" tableId="clientes" />
       </Card>
       <ClienteFormModal open={showForm} onClose={() => { setShowForm(false); setEditClient(null); }} onSave={handleSave} initial={editClient} />
+    </div>
+  );
+}
+
+function ClientIcon({ name, color = '#4f46e5', size = 18 }) {
+  const common = { fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const paths = {
+    chart: (
+      <>
+        <path {...common} d="M4 19V11" />
+        <path {...common} d="M10 19V5" />
+        <path {...common} d="M16 19V8" />
+        <path {...common} d="M21 19H3" />
+      </>
+    ),
+    user: (
+      <>
+        <path {...common} d="M20 21a8 8 0 0 0-16 0" />
+        <circle {...common} cx="12" cy="7" r="4" />
+      </>
+    ),
+    shield: <path {...common} d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />,
+    briefcase: (
+      <>
+        <rect {...common} x="3" y="7" width="18" height="13" rx="2" />
+        <path {...common} d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        <path {...common} d="M3 13h18" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect {...common} x="3" y="4" width="18" height="18" rx="2" />
+        <path {...common} d="M16 2v4M8 2v4M3 10h18" />
+      </>
+    ),
+    wallet: (
+      <>
+        <path {...common} d="M3 7h18v12H3z" />
+        <path {...common} d="M16 12h5v4h-5a2 2 0 0 1 0-4Z" />
+      </>
+    ),
+    check: (
+      <>
+        <rect {...common} x="4" y="4" width="16" height="16" rx="3" />
+        <path {...common} d="m8 12 3 3 5-6" />
+      </>
+    ),
+    hourglass: (
+      <>
+        <path {...common} d="M6 3h12M6 21h12M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9" />
+      </>
+    ),
+    alert: (
+      <>
+        <path {...common} d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+        <path {...common} d="M12 9v4M12 17h.01" />
+      </>
+    ),
+    phone: <path {...common} d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1A19.5 19.5 0 0 1 5.2 13 19.8 19.8 0 0 1 2.1 4.4 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z" />,
+    edit: <path {...common} d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
+    note: (
+      <>
+        <path {...common} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+        <path {...common} d="M14 2v6h6M8 13h8M8 17h6" />
+      </>
+    ),
+    trash: (
+      <>
+        <path {...common} d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+        <path {...common} d="M10 11v6M14 11v6" />
+      </>
+    ),
+    chevron: <path {...common} d="m9 18 6-6-6-6" />,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block' }}>
+      {paths[name] || paths.chart}
+    </svg>
+  );
+}
+
+function ClientMetricCard({ icon, label, value, color, bg, onClick }) {
+  const content = (
+    <>
+      <div style={{
+        width: 44, height: 44, borderRadius: 12, background: bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <ClientIcon name={icon} color={color} size={21} />
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 5 }}>{label}</div>
+        <div style={{ fontSize: 22, color, fontWeight: 800, fontFamily: 'DM Mono, monospace', lineHeight: 1.1 }}>{value}</div>
+      </div>
+      {onClick && <ClientIcon name="chevron" color="#64748b" size={18} />}
+    </>
+  );
+  const style = {
+    display: 'flex', alignItems: 'center', gap: 16, padding: '18px 20px',
+    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14,
+    boxShadow: '0 8px 22px rgba(15,23,42,0.05)', width: '100%', minWidth: 0,
+    fontFamily: 'DM Sans, sans-serif', textAlign: 'left',
+  };
+  if (!onClick) return <div style={style}>{content}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = '#c7d2fe'; e.currentTarget.style.background = '#fbfdff'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.background = '#fff'; }}
+      style={{ ...style, cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s' }}
+    >
+      {content}
+    </button>
+  );
+}
+
+function ClientFinancialSummaryCard({ bal, gananciaObtenida, isMobile }) {
+  const metrics = [
+    { label: 'Total a recuperar', value: formatCurrency(bal.totalPactado), color: '#4f46e5' },
+    { label: 'Total pagado', value: formatCurrency(bal.totalPagado), color: '#059669' },
+    { label: 'Ganancia obtenida', value: formatCurrency(gananciaObtenida), color: '#059669' },
+    { label: 'Ganancia proyectada', value: formatCurrency(bal.gananciaEsperada), color: '#4f46e5' },
+  ];
+  return (
+    <div style={{
+      position: 'relative', overflow: 'hidden', background: '#fff', border: '1px solid #e5e7eb',
+      borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 26,
+    }}>
+      <div style={{ position: 'absolute', right: -70, top: -95, width: 260, height: 250, borderRadius: '45%', background: 'rgba(99,102,241,0.12)' }} />
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ width: 46, height: 46, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ClientIcon name="chart" color="#4f46e5" size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>Resumen financiero</div>
+            <div style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>Capital activo</div>
+          </div>
+        </div>
+        <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Mono, monospace', lineHeight: 1, marginBottom: 26 }}>
+          {formatCurrency(bal.capitalInvertido)}
+        </div>
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 18 }} />
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: isMobile ? 14 : 0 }}>
+          {metrics.map((m, idx) => (
+            <div key={m.label} style={{ padding: isMobile ? 0 : '0 18px', borderLeft: !isMobile && idx > 0 ? '1px solid #e5e7eb' : 'none' }}>
+              <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 10 }}>{m.label}</div>
+              <div style={{ fontSize: isMobile ? 17 : 22, color: m.color, fontWeight: 900, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap' }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientStatusCard({ client, bal, overdueInst, nextInst, onViewCuotas, onPay, isMobile }) {
+  const statusRows = [
+    { icon: 'user', label: 'Estado', value: client.estado, color: client.estado === 'Activo' ? '#16a34a' : '#64748b' },
+    { icon: 'shield', label: 'Riesgo', value: client.riesgo, color: client.riesgo === 'Alto' ? '#dc2626' : client.riesgo === 'Medio' ? '#f97316' : '#16a34a' },
+    { icon: 'briefcase', label: 'Operaciones activas', value: maskSensitiveNumber(bal.opActivas), color: '#2563eb' },
+    { icon: 'calendar', label: 'Cuotas vencidas', value: maskSensitiveNumber(overdueInst.length), color: overdueInst.length ? '#dc2626' : '#16a34a' },
+    { icon: 'alert', label: 'Vencido', value: formatCurrency(bal.montoVencido), color: bal.montoVencido > 0 ? '#dc2626' : '#16a34a' },
+    { icon: 'calendar', label: 'Próximo vencimiento', value: nextInst ? `${formatDate(nextInst.fechaVencimiento)} (${nextInst.codigo})` : 'Sin vencimientos', color: nextInst ? '#f97316' : '#64748b' },
+  ];
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ClientIcon name="user" color="#0f172a" size={22} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Estado del cliente</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 22 }}>
+        {statusRows.map(row => (
+          <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+            <ClientIcon name={row.icon} color={row.color} size={18} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{row.label}</div>
+              <div style={{ fontSize: 14, color: '#0f172a', fontWeight: 700, marginTop: 3, overflowWrap: 'anywhere' }}>{row.value}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.15fr', gap: 10 }}>
+        <Btn variant="secondary" onClick={onViewCuotas} style={{ justifyContent: 'center' }}><ClientIcon name="calendar" color="#475569" size={16} /> Ver cuotas</Btn>
+        <Btn onClick={onPay} style={{ justifyContent: 'center' }}><ClientIcon name="wallet" color="#fff" size={16} /> Registrar pago</Btn>
+      </div>
     </div>
   );
 }
@@ -230,6 +419,13 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
   const [newNote, setNewNote] = React.useState({ tipo: 'Observación interna', contenido: '', recordatorio: '' });
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [viewportWidth, setViewportWidth] = React.useState(() => window.innerWidth || 1200);
+
+  React.useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth || 1200);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   if (!client) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Cliente no encontrado.</div>;
 
@@ -243,6 +439,14 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
   const bal = calculateClientBalance(clientId, installments, payments, operations);
   const today = new Date();
   const overdueInst = clientInst.filter(i => new Date(i.fechaVencimiento) < today && i.saldoPendiente > 0);
+  const activeOps = clientOps.filter(o => o.estado === 'Activa');
+  const gananciaObtenida = Math.max(0, bal.totalPagado - bal.capitalInvertido);
+  const nextInst = bal.nextInst;
+  const isMobile = viewportWidth < 720;
+  const isTablet = viewportWidth < 1120;
+  const dashboardGrid = isTablet ? '1fr' : '2fr 1fr';
+  const metricGrid = isMobile ? '1fr' : isTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))';
+  const resumenGrid = viewportWidth < 980 ? '1fr' : '1fr 1fr';
 
   async function addNote() {
     if (!newNote.contenido.trim()) return;
@@ -276,6 +480,61 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
         <span style={{ color: '#374151', fontWeight: 600 }}>{client.nombre}</span>
       </div>
 
+      <Card style={{ padding: isMobile ? 18 : '22px 26px', borderRadius: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 26px rgba(15,23,42,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: 22, flexWrap: 'wrap' }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: 16, flexShrink: 0,
+            background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 34, fontWeight: 800, color: '#fff', fontFamily: 'DM Sans, sans-serif',
+            boxShadow: '0 12px 24px rgba(79,70,229,0.22)',
+          }}>{client.nombre[0]}</div>
+          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Sans, sans-serif', letterSpacing: 0 }}>{client.nombre}</h2>
+              <StatusBadge status={client.estado} size="md" />
+              <StatusBadge status={client.riesgo} size="md" />
+            </div>
+            <div style={{ display: 'flex', gap: isMobile ? 10 : 18, flexWrap: 'wrap', fontSize: 13, color: '#475569', fontFamily: 'DM Sans, sans-serif', alignItems: 'center' }}>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="note" color="#64748b" size={15} />{client.codigo}</span>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="user" color="#64748b" size={15} />{client.dni}</span>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="phone" color="#64748b" size={15} />{client.telefono}</span>
+              {client.direccion && <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="shield" color="#64748b" size={15} />{client.direccion}</span>}
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="calendar" color="#64748b" size={15} />Cliente desde {formatDate(client.createdAt)}</span>
+            </div>
+            {client.notas && <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>"{client.notas}"</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', flex: isMobile ? '1 1 100%' : '0 1 540px' }}>
+            <WAButton phone={client.telefono} message={`Hola ${client.nombre}!`} size="md" />
+            <Btn size="md" variant="secondary" onClick={() => setShowEditForm(true)}><ClientIcon name="edit" color="#374151" size={15} /> Editar</Btn>
+            <Btn size="md" onClick={() => onNav('operaciones', null, 'nuevo', clientId)}>+ Operación</Btn>
+            <Btn size="md" variant="secondary" onClick={() => onNav('pagos', null, 'nuevo', clientId)}><ClientIcon name="wallet" color="#475569" size={15} /> Registrar pago</Btn>
+            <Btn size="md" variant="secondary" onClick={() => { setActiveTab('notas'); setShowNoteForm(true); }}><ClientIcon name="note" color="#475569" size={15} /> Nota</Btn>
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: dashboardGrid, gap: 16 }}>
+        <ClientFinancialSummaryCard bal={bal} gananciaObtenida={gananciaObtenida} isMobile={isMobile} />
+        <ClientStatusCard
+          client={client}
+          bal={bal}
+          overdueInst={overdueInst}
+          nextInst={nextInst}
+          isMobile={isMobile}
+          onViewCuotas={() => setActiveTab('cuotas')}
+          onPay={() => onNav('pagos', null, 'nuevo', clientId)}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: metricGrid, gap: 14 }}>
+        <ClientMetricCard icon="hourglass" label="Pendiente de cobro" value={formatCurrency(bal.saldoPendiente)} color="#4f46e5" bg="#ede9fe" onClick={() => setActiveTab('cuotas')} />
+        <ClientMetricCard icon="check" label="Ganancia obtenida" value={formatCurrency(gananciaObtenida)} color="#059669" bg="#dcfce7" onClick={() => setActiveTab('pagos')} />
+        <ClientMetricCard icon="briefcase" label="Operaciones activas" value={maskSensitiveNumber(bal.opActivas)} color="#2563eb" bg="#dbeafe" onClick={() => setActiveTab('operaciones')} />
+        <ClientMetricCard icon="calendar" label="Cuotas vencidas" value={maskSensitiveNumber(overdueInst.length)} color={overdueInst.length ? '#dc2626' : '#059669'} bg={overdueInst.length ? '#fee2e2' : '#dcfce7'} onClick={() => setActiveTab('cuotas')} />
+      </div>
+
+      <div style={{ display: 'none' }}>
       {/* Header Card */}
       <Card style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
@@ -322,19 +581,110 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
         <KPICard label="Cuotas vencidas"   value={overdueInst.length}                  accent={overdueInst.length > 0 ? 'red' : 'green'} icon="📅" sub="cuotas" />
       </div>
 
+      </div>
+
       {/* Tabs */}
-      <Card style={{ padding: 0, overflow: 'hidden' }}>
+      <Card style={{ padding: 0, overflow: 'hidden', borderRadius: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 26px rgba(15,23,42,0.05)' }}>
         <div style={{ padding: '0 16px' }}>
           <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
         </div>
-        <div style={{ padding: 16 }}>
+        <div style={{ padding: isMobile ? 12 : 16 }}>
           {activeTab === 'resumen' && (
+            <div style={{ display: 'grid', gridTemplateColumns: resumenGrid, gap: 16 }}>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 12 }}>
+                  <ClientIcon name="briefcase" color="#2563eb" size={18} /> Operaciones activas
+                </div>
+                {activeOps.length === 0 ? <EmptyState title="Sin operaciones activas" icon="📋" /> :
+                  activeOps.map(op => (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => onNav('operaciones', op.id)}
+                      title={`Abrir ${op.codigo}`}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#c7d2fe'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#eef2ff'; }}
+                      style={{
+                        width: '100%', padding: '12px 14px', background: '#fff', border: '1px solid #eef2ff',
+                        borderRadius: 10, marginBottom: 8, cursor: 'pointer', textAlign: 'left',
+                        fontFamily: 'DM Sans, sans-serif', transition: 'background 0.15s, border-color 0.15s',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                      }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 900, color: '#4f46e5', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</div>
+                        <div style={{ fontSize: 14, color: '#0f172a', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{op.descripcion}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(op.totalEsperado)}</div>
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{maskSensitiveNumber(op.cantidadCuotas)} cuotas</div>
+                      </div>
+                      <ClientIcon name="chevron" color="#64748b" size={17} />
+                    </button>
+                  ))
+                }
+              </div>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 12 }}>
+                  <ClientIcon name="calendar" color="#475569" size={18} /> Cuotas próximas / vencidas
+                </div>
+                {(() => {
+                  const now = new Date(); now.setHours(0,0,0,0);
+                  const rows = [...clientInst].filter(i => i.saldoPendiente > 0)
+                    .sort((a, b) => {
+                      const ao = new Date(a.fechaVencimiento) < now ? 0 : 1;
+                      const bo = new Date(b.fechaVencimiento) < now ? 0 : 1;
+                      return ao - bo || a.fechaVencimiento.localeCompare(b.fechaVencimiento);
+                    })
+                    .slice(0, 6);
+                  if (rows.length === 0) return <EmptyState title="Sin cuotas pendientes" icon="📅" />;
+                  return rows.map(inst => {
+                    const due = new Date(inst.fechaVencimiento + 'T00:00:00');
+                    const isOverdue = due < now;
+                    const rowBg = isOverdue ? '#fef2f2' : '#f8fafc';
+                    return (
+                      <div key={inst.id} style={{ padding: '11px 13px', background: rowBg, borderRadius: 10, marginBottom: 8, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 1fr auto', gap: isMobile ? 8 : 12, alignItems: 'center', borderLeft: `3px solid ${isOverdue ? '#dc2626' : '#4f46e5'}` }}>
+                        <div>
+                          <span style={{ fontSize: 13, color: '#4f46e5', fontWeight: 900, fontFamily: 'DM Mono, monospace' }}>{inst.codigo}</span>
+                          <span style={{ fontSize: 12, color: '#64748b', marginLeft: 8 }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: isOverdue ? '#dc2626' : '#64748b', fontWeight: isOverdue ? 800 : 600 }}>Vence: {formatDate(inst.fechaVencimiento)}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
+                          <span style={{ fontSize: 14, fontWeight: 900, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(inst.saldoPendiente)}</span>
+                          <StatusBadge status={inst.estado} />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {false && activeTab === 'resumen' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Operaciones activas</div>
                 {clientOps.filter(o => o.estado === 'Activa').length === 0 ? <EmptyState title="Sin operaciones activas" icon="📋" /> :
                   clientOps.filter(o => o.estado === 'Activa').map(op => (
-                    <div key={op.id} style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: 8, marginBottom: 8 }}>
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => onNav('operaciones', op.id)}
+                      title={`Abrir ${op.codigo}`}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#eef2ff'; e.currentTarget.style.borderColor = '#c7d2fe'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = 'transparent'; }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        background: '#f8fafc',
+                        border: '1px solid transparent',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontFamily: 'DM Sans, sans-serif',
+                        transition: 'background 0.15s, border-color 0.15s, transform 0.15s',
+                      }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <span style={{ fontSize: 12, fontWeight: 700, color: '#4f46e5', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</span>
@@ -345,7 +695,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                           <div style={{ fontSize: 11, color: '#94a3b8' }}>{op.cantidadCuotas} cuotas</div>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))
                 }
               </div>
@@ -370,7 +720,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       return (
                         <div key={inst.id} style={{ padding: '8px 12px', background: s.bg, borderRadius: 8, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: `3px solid ${s.border}` }}>
                           <div>
-                            <span style={{ fontSize: 11, color: '#64748b' }}>{inst.codigo} · Cuota {inst.numeroCuota}/{inst.totalCuotas}</span>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>{inst.codigo} · Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
                             <div style={{ fontSize: 12, color: s.dateColor, fontWeight: s.dateBold ? 600 : 400 }}>Vence: {formatDate(inst.fechaVencimiento)}</div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -392,7 +742,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'tipo', label: 'Tipo' },
                 { key: 'descripcion', label: 'Descripción' },
-                { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${v}c / ${formatCurrency(row.valorCuota)}` },
+                { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${maskSensitiveNumber(v)}c / ${formatCurrency(row.valorCuota)}` },
                 { key: 'totalEsperado', label: 'Total', mono: true, render: v => formatCurrency(v) },
                 { key: 'estado', label: 'Estado', render: v => <StatusBadge status={v} /> },
                 { key: '_acc', label: '', sortable: false, render: (_, row) => <Btn size="sm" variant="ghost" onClick={() => onNav('operaciones', row.id)}>Ver →</Btn> },
@@ -556,7 +906,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
           const hasOps = data.operations.some(o => o.clientId === clientId);
           if (hasOps) { alert('No se puede eliminar un cliente con operaciones registradas. Eliminá las operaciones primero.'); return; }
           setConfirmDelete(true);
-        }}>🗑 Eliminar cliente</Btn>
+        }} style={{ borderColor: '#fca5a5', background: '#fff1f2', color: '#b91c1c' }}><ClientIcon name="trash" color="#b91c1c" size={15} /> Eliminar cliente</Btn>
       </div>
       <ConfirmModal
         open={confirmDelete}

@@ -77,6 +77,31 @@ function ImportarDatosScreen({ onDataChange }) {
     });
   }
 
+  function buildInferredPayments(cuotas) {
+    return cuotas
+      .filter(function(c) { return c.estado === 'Pagada'; })
+      .map(function(c) {
+        var monto = Number(c.monto_pagado || c.monto_programado) || 0;
+        var legacyPago = c._legacyPagoCodigo || c.codigo;
+        var legacyOp = c._legacyOpCodigo || c._opCodigo;
+        return {
+          codigo:          'PAG-IMP-' + c.codigo,
+          recibo_codigo:   'REC-IMP-' + c.codigo,
+          _cuotaCodigo:    c.codigo,
+          _clientCodigo:   c._clientCodigo,
+          _opCodigo:       c._opCodigo,
+          _legacyPagoCodigo: legacyPago,
+          _legacyOpCodigo: legacyOp,
+          fecha_pago:      c.fecha_vencimiento,
+          monto:           monto,
+          metodo_pago:     'Otro',
+          numero_cuota:    c.numero_cuota,
+          total_cuotas:    c.total_cuotas,
+          notas:           'Importado desde Excel: ' + legacyPago + ' / ' + legacyOp + ' cuota ' + c.numero_cuota + '/' + c.total_cuotas,
+        };
+      });
+  }
+
   // ─── Parser principal ────────────────────────────────────────────────────────
 
   function parseExcelFile(arrayBuffer) {
@@ -203,6 +228,8 @@ function ImportarDatosScreen({ onDataChange }) {
             codigo:            idPago,
             _clientCodigo:     cliente.codigo,
             _opCodigo:         opCodigoCuota,
+            _legacyPagoCodigo: idPago,
+            _legacyOpCodigo:   opCodigoCuota,
             numero_cuota:      numCuota,
             total_cuotas:      0,
             fecha_vencimiento: fechaVenc,
@@ -239,7 +266,8 @@ function ImportarDatosScreen({ onDataChange }) {
     }
 
     applyCodeTranslation(clientes, allOperaciones, allCuotas);
-    return { clientes: clientes, operaciones: allOperaciones, cuotas: allCuotas };
+    var allPagos = buildInferredPayments(allCuotas);
+    return { clientes: clientes, operaciones: allOperaciones, cuotas: allCuotas, pagos: allPagos };
   }
 
   // ─── Manejo de archivo ───────────────────────────────────────────────────────
@@ -292,11 +320,13 @@ function ImportarDatosScreen({ onDataChange }) {
     var clientes    = parsed.clientes;
     var operaciones = parsed.operaciones;
     var cuotas      = parsed.cuotas;
+    var pagos       = parsed.pagos || [];
 
     var log = {
       clientes:    { insertados: [], omitidos: [], errores: [] },
       operaciones: { insertadas: [], omitidas: [], errores: [] },
       cuotas:      { insertadas: 0,  omitidas:  0, sinOp: 0, errores: [] },
+      pagos:       { insertados: [], omitidos: [], imputados: [], sinCuota: [], errores: [] },
     };
 
     // 1. Pre-fetch existing codes
@@ -304,12 +334,18 @@ function ImportarDatosScreen({ onDataChange }) {
     Promise.all([
       sb.from('clients').select('id, codigo'),
       sb.from('operations').select('id, codigo'),
-      sb.from('installments').select('id, codigo'),
+      sb.from('installments').select('id, codigo, client_id, operation_id, monto_programado, fecha_vencimiento'),
+      sb.from('payments').select('id, codigo, receipt_id'),
+      sb.from('payment_allocations').select('id, payment_id, installment_id, monto_aplicado'),
+      sb.from('receipts').select('id, codigo, numero, payment_id'),
     ]).then(function(results) {
-      var r1 = results[0], r2 = results[1], r3 = results[2];
+      var r1 = results[0], r2 = results[1], r3 = results[2], r4 = results[3], r5 = results[4], r6 = results[5];
       if (r1.error) throw new Error('Error consultando clientes: ' + r1.error.message);
       if (r2.error) throw new Error('Error consultando operaciones: ' + r2.error.message);
       if (r3.error) throw new Error('Error consultando cuotas: ' + r3.error.message);
+      if (r4.error) throw new Error('Error consultando pagos: ' + r4.error.message);
+      if (r5.error) throw new Error('Error consultando imputaciones: ' + r5.error.message);
+      if (r6.error) throw new Error('Error consultando recibos: ' + r6.error.message);
 
       // Build existing maps
       var existingClientMap = {};
@@ -319,7 +355,26 @@ function ImportarDatosScreen({ onDataChange }) {
       (r2.data || []).forEach(function(o) { existingOpMap[o.codigo] = o.id; });
 
       var existingCuotaSet = {};
-      (r3.data || []).forEach(function(i) { existingCuotaSet[i.codigo] = true; });
+      var cuotaMap = {};
+      (r3.data || []).forEach(function(i) {
+        existingCuotaSet[i.codigo] = true;
+        cuotaMap[i.codigo] = i;
+      });
+
+      var existingPaymentMap = {};
+      (r4.data || []).forEach(function(p) { existingPaymentMap[p.codigo] = p; });
+
+      var allocationByInstallment = {};
+      (r5.data || []).forEach(function(a) {
+        if (a.installment_id) allocationByInstallment[a.installment_id] = a;
+      });
+
+      var existingReceiptCodeSet = {};
+      var nextReceiptNumber = 1;
+      (r6.data || []).forEach(function(rec) {
+        existingReceiptCodeSet[rec.codigo] = true;
+        nextReceiptNumber = Math.max(nextReceiptNumber, (Number(rec.numero) || 0) + 1);
+      });
 
       // Separate new vs existing for clients
       var newClientes = [];
@@ -399,7 +454,7 @@ function ImportarDatosScreen({ onDataChange }) {
             }
             var out = {};
             Object.keys(c).forEach(function(k) {
-              if (k !== '_clientCodigo' && k !== '_opCodigo') out[k] = c[k];
+              if (k.charAt(0) !== '_') out[k] = c[k];
             });
             out.client_id    = cliId;
             out.operation_id = opId;
@@ -409,14 +464,147 @@ function ImportarDatosScreen({ onDataChange }) {
           // 4. Insert new cuotas
           setImportStep('Insertando cuotas...');
           var insertCuotasPromise = newCuotas.length > 0
-            ? sb.from('installments').insert(newCuotas).select('id')
+            ? sb.from('installments').insert(newCuotas).select('id, codigo, client_id, operation_id, monto_programado, fecha_vencimiento')
             : Promise.resolve({ data: [], error: null });
 
           return insertCuotasPromise.then(function(res3) {
             if (res3.error) throw new Error('Cuotas: ' + res3.error.message);
             log.cuotas.insertadas = (res3.data || []).length;
-            setImportLog(log);
-            if (onDataChange) onDataChange();
+            (res3.data || []).forEach(function(i) {
+              cuotaMap[i.codigo] = i;
+            });
+
+            // 5. Insert inferred historical payments for paid installments
+            setImportStep('Importando pagos historicos...');
+            var newPayments = [];
+            var pendingPaymentItems = [];
+            pagos.forEach(function(p) {
+              var cuota = cuotaMap[p._cuotaCodigo];
+              if (!cuota) {
+                log.pagos.sinCuota.push({ codigo: p.codigo, desc: p._cuotaCodigo });
+                return;
+              }
+              if (existingPaymentMap[p.codigo]) {
+                log.pagos.omitidos.push({ codigo: p.codigo, desc: 'Pago existente' });
+                return;
+              }
+              if (allocationByInstallment[cuota.id]) {
+                log.pagos.imputados.push({ codigo: p.codigo, desc: 'Cuota ya imputada: ' + p._cuotaCodigo });
+                return;
+              }
+              if (existingReceiptCodeSet[p.recibo_codigo]) {
+                log.pagos.omitidos.push({ codigo: p.codigo, desc: 'Recibo existente: ' + p.recibo_codigo });
+                return;
+              }
+
+              var montoPago = Number(p.monto || cuota.monto_programado) || 0;
+              if (montoPago <= 0 || !cuota.client_id || !cuota.operation_id) {
+                log.pagos.errores.push('No se pudo preparar ' + p.codigo + ' para ' + p._cuotaCodigo);
+                return;
+              }
+
+              newPayments.push({
+                codigo:       p.codigo,
+                client_id:    cuota.client_id,
+                fecha_pago:   p.fecha_pago || cuota.fecha_vencimiento || new Date().toISOString().slice(0, 10),
+                monto:        montoPago,
+                metodo_pago:  p.metodo_pago,
+                notas:        p.notas,
+              });
+              pendingPaymentItems.push({
+                pago:       p,
+                cuota:      cuota,
+                monto:      montoPago,
+                fecha_pago:  p.fecha_pago || cuota.fecha_vencimiento || new Date().toISOString().slice(0, 10),
+              });
+            });
+
+            var insertPaymentsPromise = newPayments.length > 0
+              ? sb.from('payments').insert(newPayments).select('id, codigo')
+              : Promise.resolve({ data: [], error: null });
+
+            return insertPaymentsPromise.then(function(res4) {
+              if (res4.error) throw new Error('Pagos: ' + res4.error.message);
+
+              var insertedPaymentMap = {};
+              (res4.data || []).forEach(function(p) { insertedPaymentMap[p.codigo] = p; });
+
+              var insertedItems = [];
+              pendingPaymentItems.forEach(function(item) {
+                var insertedPayment = insertedPaymentMap[item.pago.codigo];
+                if (!insertedPayment) {
+                  log.pagos.errores.push('No se pudo recuperar el pago insertado ' + item.pago.codigo);
+                  return;
+                }
+                item.paymentId = insertedPayment.id;
+                insertedItems.push(item);
+                log.pagos.insertados.push({
+                  codigo: item.pago.codigo,
+                  desc: item.pago._legacyPagoCodigo + ' -> ' + item.pago._cuotaCodigo,
+                });
+              });
+
+              if (insertedItems.length === 0) {
+                setImportLog(log);
+                if (onDataChange) onDataChange();
+                return;
+              }
+
+              var receiptRows = insertedItems.map(function(item) {
+                return {
+                  codigo:     item.pago.recibo_codigo,
+                  payment_id: item.paymentId,
+                  client_id:  item.cuota.client_id,
+                  numero:     nextReceiptNumber++,
+                  estado:     'Emitido',
+                  fecha:      item.fecha_pago,
+                };
+              });
+
+              return sb.from('receipts').insert(receiptRows).select('id, payment_id, codigo').then(function(res5) {
+                if (res5.error) throw new Error('Recibos: ' + res5.error.message);
+
+                var updateReceiptPromises = (res5.data || []).map(function(rec) {
+                  return sb.from('payments').update({ receipt_id: rec.id }).eq('id', rec.payment_id);
+                });
+
+                return Promise.all(updateReceiptPromises).then(function(updateResults) {
+                  updateResults.forEach(function(r) {
+                    if (r.error) throw new Error('Actualizando recibo en pago: ' + r.error.message);
+                  });
+
+                  var allocRows = insertedItems.map(function(item) {
+                    return {
+                      payment_id:     item.paymentId,
+                      installment_id: item.cuota.id,
+                      monto_aplicado: item.monto,
+                    };
+                  });
+                  var cashRows = insertedItems.map(function(item) {
+                    return {
+                      tipo:          'Entrada por pago',
+                      monto:         item.monto,
+                      client_id:     item.cuota.client_id,
+                      operation_id:  item.cuota.operation_id,
+                      payment_id:    item.paymentId,
+                      credit_card_id: null,
+                      descripcion:   item.pago.codigo + ' importado Excel cuota ' + item.pago.numero_cuota + '/' + item.pago.total_cuotas,
+                      fecha:         item.fecha_pago,
+                    };
+                  });
+
+                  return Promise.all([
+                    sb.from('payment_allocations').insert(allocRows),
+                    sb.from('cash_movements').insert(cashRows),
+                  ]).then(function(extraResults) {
+                    if (extraResults[0].error) throw new Error('Imputaciones: ' + extraResults[0].error.message);
+                    if (extraResults[1].error) throw new Error('Movimientos de caja: ' + extraResults[1].error.message);
+                    setImportLog(log);
+                    if (onDataChange) onDataChange();
+                  });
+                });
+              });
+            });
           });
         });
       });
@@ -581,12 +769,56 @@ function ImportarDatosScreen({ onDataChange }) {
 
   // ─── Log de importacion ──────────────────────────────────────────────────────
 
+  function PreviewPagos() {
+    var total = (parsed.pagos || []).reduce(function(s, p) { return s + (Number(p.monto) || 0); }, 0);
+    return (
+      <div>
+        <div style={{display:'flex', gap:12, marginBottom:16, flexWrap:'wrap'}}>
+          <div style={{padding:'8px 16px', background:'#dcfce7', borderRadius:8, fontSize:13, fontWeight:600, color:'#16a34a'}}>
+            {(parsed.pagos || []).length} pagos inferidos
+          </div>
+          <div style={{padding:'8px 16px', background:'#eff6ff', borderRadius:8, fontSize:13, fontWeight:600, color:'#2563eb'}}>
+            Total: {formatCurrency(total)}
+          </div>
+        </div>
+        <div style={{overflowX:'auto', maxHeight:380, overflowY:'auto'}}>
+          <table style={{width:'100%', borderCollapse:'collapse'}}>
+            <thead style={{position:'sticky', top:0, background:'#fff', zIndex:1}}>
+              <tr>
+                {['Pago','Cuota','Operacion','Fecha','Monto','Origen'].map(function(h) {
+                  return <th key={h} style={TH}>{h}</th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {(parsed.pagos || []).map(function(p, i) {
+                return (
+                  <tr key={i}
+                    onMouseEnter={function(e){e.currentTarget.style.background='#f8fafc'}}
+                    onMouseLeave={function(e){e.currentTarget.style.background=''}}>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:11, color:'#6366f1'})}>{p.codigo}</td>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:11})}>{p._cuotaCodigo}</td>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:11})}>{p._opCodigo}</td>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:12})}>{p.fecha_pago ? formatDate(p.fecha_pago) : '-'}</td>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:12, fontWeight:700, color:'#16a34a'})}>{formatCurrency(p.monto)}</td>
+                    <td style={Object.assign({}, TD, {fontFamily:'DM Mono,monospace', fontSize:11, color:'#64748b'})}>{p._legacyPagoCodigo}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   function ImportLog({ log }) {
     var [logTab, setLogTab] = React.useState('clientes');
     var sections = [
       { id: 'clientes',    label: 'Clientes' },
       { id: 'operaciones', label: 'Operaciones' },
       { id: 'cuotas',      label: 'Cuotas' },
+      { id: 'pagos',       label: 'Pagos' },
     ];
 
     function LogRow(props) {
@@ -613,8 +845,13 @@ function ImportarDatosScreen({ onDataChange }) {
           <StatCard icon="↩" label="Operaciones existentes" n={log.operaciones.omitidas.length}   color="#92400e" bg="#fffbeb" />
           <StatCard icon="📅" label="Cuotas insertadas"      n={log.cuotas.insertadas} color="#16a34a" bg="#f0fdf4" />
           <StatCard icon="↩" label="Cuotas existentes"       n={log.cuotas.omitidas}  color="#92400e" bg="#fffbeb" />
+          <StatCard icon="$" label="Pagos insertados"          n={log.pagos.insertados.length} color="#16a34a" bg="#f0fdf4" />
+          <StatCard icon="-" label="Pagos omitidos"            n={log.pagos.omitidos.length + log.pagos.imputados.length} color="#92400e" bg="#fffbeb" />
           {log.cuotas.sinOp > 0 && (
             <StatCard icon="⚠" label="Cuotas sin operacion" n={log.cuotas.sinOp} color="#dc2626" bg="#fef2f2" />
+          )}
+          {log.pagos.sinCuota.length > 0 && (
+            <StatCard icon="!" label="Pagos sin cuota" n={log.pagos.sinCuota.length} color="#dc2626" bg="#fef2f2" />
           )}
         </div>
 
@@ -712,6 +949,68 @@ function ImportarDatosScreen({ onDataChange }) {
             </div>
           </div>
         )}
+
+        {logTab === 'pagos' && (
+          <div>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:12, marginBottom:16}}>
+              <div style={{textAlign:'center', padding:'14px 10px', background:'#f0fdf4', borderRadius:10}}>
+                <div style={{fontSize:28, fontWeight:800, color:'#16a34a'}}>{log.pagos.insertados.length}</div>
+                <div style={{fontSize:12, color:'#64748b'}}>Insertados</div>
+              </div>
+              <div style={{textAlign:'center', padding:'14px 10px', background:'#fffbeb', borderRadius:10}}>
+                <div style={{fontSize:28, fontWeight:800, color:'#92400e'}}>{log.pagos.omitidos.length}</div>
+                <div style={{fontSize:12, color:'#64748b'}}>Ya existian</div>
+              </div>
+              <div style={{textAlign:'center', padding:'14px 10px', background:'#fffbeb', borderRadius:10}}>
+                <div style={{fontSize:28, fontWeight:800, color:'#92400e'}}>{log.pagos.imputados.length}</div>
+                <div style={{fontSize:12, color:'#64748b'}}>Cuota imputada</div>
+              </div>
+              <div style={{textAlign:'center', padding:'14px 10px', background:'#fef2f2', borderRadius:10}}>
+                <div style={{fontSize:28, fontWeight:800, color: log.pagos.sinCuota.length > 0 ? '#dc2626' : '#94a3b8'}}>{log.pagos.sinCuota.length}</div>
+                <div style={{fontSize:12, color:'#64748b'}}>Sin cuota</div>
+              </div>
+            </div>
+
+            {log.pagos.insertados.length > 0 && (
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#16a34a', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em'}}>
+                  Insertados ({log.pagos.insertados.length})
+                </div>
+                {log.pagos.insertados.map(function(p, i) {
+                  return <LogRow key={i} type="insertado" codigo={p.codigo} desc={p.desc} />;
+                })}
+              </div>
+            )}
+            {(log.pagos.omitidos.length + log.pagos.imputados.length) > 0 && (
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#92400e', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em'}}>
+                  Omitidos ({log.pagos.omitidos.length + log.pagos.imputados.length})
+                </div>
+                {log.pagos.omitidos.concat(log.pagos.imputados).map(function(p, i) {
+                  return <LogRow key={i} type="omitido" codigo={p.codigo} desc={p.desc} />;
+                })}
+              </div>
+            )}
+            {log.pagos.sinCuota.length > 0 && (
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#dc2626', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em'}}>
+                  Sin cuota ({log.pagos.sinCuota.length})
+                </div>
+                {log.pagos.sinCuota.map(function(p, i) {
+                  return <LogRow key={i} type="error" codigo={p.codigo} desc={p.desc} />;
+                })}
+              </div>
+            )}
+            {log.pagos.errores.length > 0 && (
+              <div>
+                <div style={{fontSize:11, fontWeight:700, color:'#dc2626', marginBottom:6}}>Errores</div>
+                {log.pagos.errores.map(function(e, i) {
+                  return <LogRow key={i} type="error" codigo="-" desc={e} />;
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -793,6 +1092,7 @@ function ImportarDatosScreen({ onDataChange }) {
               {label:'Clientes',    n:parsed.clientes.length,    bg:'#eff6ff', color:'#2563eb'},
               {label:'Operaciones', n:parsed.operaciones.length, bg:'#faf5ff', color:'#7c3aed'},
               {label:'Cuotas',      n:parsed.cuotas.length,      bg:'#f0fdf4', color:'#16a34a'},
+              {label:'Pagos',       n:(parsed.pagos || []).length, bg:'#ecfdf5', color:'#059669'},
             ].map(function(item) {
               return (
                 <div key={item.label} style={{padding:'6px 16px', borderRadius:99,
@@ -810,6 +1110,7 @@ function ImportarDatosScreen({ onDataChange }) {
               {id:'clientes',    label:'Clientes (' + parsed.clientes.length + ')'},
               {id:'operaciones', label:'Operaciones (' + parsed.operaciones.length + ')'},
               {id:'cuotas',      label:'Cuotas (' + parsed.cuotas.length + ')'},
+              {id:'pagos',       label:'Pagos (' + (parsed.pagos || []).length + ')'},
             ].map(function(t) {
               return (
                 <button key={t.id} style={tabBtn(tab === t.id)} onClick={function(){setTab(t.id);}}>
@@ -822,6 +1123,7 @@ function ImportarDatosScreen({ onDataChange }) {
           {tab === 'clientes'    && <PreviewClientes />}
           {tab === 'operaciones' && <PreviewOperaciones />}
           {tab === 'cuotas'      && <PreviewCuotas />}
+          {tab === 'pagos'       && <PreviewPagos />}
 
           {/* Advertencia y confirmacion */}
           <div style={{marginTop:24, padding:'14px 18px', background:'#fffbeb',
@@ -832,7 +1134,7 @@ function ImportarDatosScreen({ onDataChange }) {
             <ul style={{fontSize:13, color:'#78350f', paddingLeft:18, lineHeight:1.8}}>
               <li>Esta accion inserta los datos directamente en Supabase.</li>
               <li>Los registros ya existentes seran omitidos automaticamente (no se duplican).</li>
-              <li>No se importan pagos historicos (solo el estado de cada cuota).</li>
+              <li>Los pagos historicos se infieren desde cuotas Cancelado del Excel.</li>
             </ul>
             <label style={{display:'flex', alignItems:'center', gap:8, marginTop:12, cursor:'pointer'}}>
               <input type="checkbox" checked={confirmed}

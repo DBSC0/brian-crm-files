@@ -14,11 +14,31 @@ const NAV_ITEMS = [
   { id: 'importar', label: 'Importar Excel', icon: '📥' },
 ];
 
-function Sidebar({ current, onNav, collapsed, onToggle }) {
+function PrivacyEyeIcon({ hidden }) {
+  const common = {
+    width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+  };
+  return hidden ? (
+    <svg {...common}>
+      <path d="m3 3 18 18" />
+      <path d="M10.6 10.6A2 2 0 0 0 13.4 13.4" />
+      <path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c5 0 8.5 4 10 8a14 14 0 0 1-2.2 3.5" />
+      <path d="M6.2 6.3A13.7 13.7 0 0 0 2 12c1.5 4 5 8 10 8 1.3 0 2.5-.3 3.6-.8" />
+    </svg>
+  ) : (
+    <svg {...common}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function Sidebar({ current, onNav, collapsed, onToggle, privacyHidden, onTogglePrivacy }) {
   return (
     <aside style={{
       width: collapsed ? 60 : 220,
-      minHeight: '100vh',
+      height: '100vh',
       background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
       display: 'flex', flexDirection: 'column',
       transition: 'width 0.2s ease',
@@ -48,7 +68,7 @@ function Sidebar({ current, onNav, collapsed, onToggle }) {
         </button>
       </div>
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '8px 0', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, minHeight: 0, padding: '8px 0', overflowY: 'auto' }}>
         {NAV_ITEMS.map(item => {
           const active = current === item.id;
           return (
@@ -74,7 +94,7 @@ function Sidebar({ current, onNav, collapsed, onToggle }) {
       {!collapsed && (
         <div style={{
           padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)',
-          display: 'flex', alignItems: 'center', gap: 8,
+          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
         }}>
           <div style={{
             width: 32, height: 32, borderRadius: '50%',
@@ -82,10 +102,25 @@ function Sidebar({ current, onNav, collapsed, onToggle }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0,
           }}>B</div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'DM Sans, sans-serif' }}>Brian Facciano</div>
             <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace' }}>Administrador</div>
           </div>
+          <button
+            onClick={onTogglePrivacy}
+            title={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
+            aria-label={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
+            style={{
+              width: 32, height: 32, borderRadius: 9,
+              border: '1px solid rgba(148,163,184,0.22)',
+              background: privacyHidden ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.06)',
+              color: privacyHidden ? '#c4b5fd' : '#94a3b8',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <PrivacyEyeIcon hidden={privacyHidden} />
+          </button>
         </div>
       )}
     </aside>
@@ -186,14 +221,21 @@ function Header({ onNav, searchData }) {
   );
 }
 
-function AppLayout({ children, current, onNav, searchData }) {
+function AppLayout({ children, current, onNav, searchData, privacyHidden, onTogglePrivacy }) {
   const [collapsed, setCollapsed] = React.useState(false);
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
-      <Sidebar current={current} onNav={(id) => onNav(id)} collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f8fafc' }}>
+      <Sidebar
+        current={current}
+        onNav={(id) => onNav(id)}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(c => !c)}
+        privacyHidden={privacyHidden}
+        onTogglePrivacy={onTogglePrivacy}
+      />
+      <div style={{ flex: 1, height: '100vh', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
         <Header onNav={onNav} searchData={searchData} />
-        <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        <main style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
           {children}
         </main>
       </div>

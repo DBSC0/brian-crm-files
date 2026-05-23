@@ -146,7 +146,7 @@ function MoraScreen({ data, onNav }) {
             <option value="16-30">16 a 30 días</option>
             <option value="30+">Más de 30 días</option>
           </select>
-          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center' }}>{filtered.length} cuota{filtered.length !== 1 ? 's' : ''} vencida{filtered.length !== 1 ? 's' : ''}</span>
+          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center' }}>{maskSensitiveNumber(filtered.length)} cuota{filtered.length !== 1 ? 's' : ''} vencida{filtered.length !== 1 ? 's' : ''}</span>
         </div>
         <DataTable
           columns={[
@@ -176,7 +176,7 @@ function MoraScreen({ data, onNav }) {
               const c = clients.find(cl => cl.id === row.clientId);
               return (
                 <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-                  <WAButton phone={c?.telefono || ''} message={`Hola ${c?.nombre}, te escribo por la cuota vencida del día ${formatDate(row.fechaVencimiento)}. El saldo pendiente es de ${formatCurrency(row.saldoPendiente)}. ¿Podemos coordinar el pago?`} />
+                  <WAButton phone={c?.telefono || ''} message={`Hola ${c?.nombre}, te escribo por la cuota vencida del día ${formatDate(row.fechaVencimiento)}. El saldo pendiente es de ${formatCurrencyRaw(row.saldoPendiente)}. ¿Podemos coordinar el pago?`} />
                   <Btn size="sm" variant="ghost" onClick={() => onNav('pagos', null, 'nuevo', row.clientId)}>💳</Btn>
                 </div>
               );

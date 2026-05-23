@@ -9,8 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; font-family: 'DM Sans', sans-serif; background: #f8fafc; color: #0f172a; }
-    #root { height: 100%; }
+    html, body { height: 100%; overflow: hidden; font-family: 'DM Sans', sans-serif; background: #f8fafc; color: #0f172a; }
+    #root { height: 100%; overflow: hidden; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -209,9 +209,30 @@ async function loadAllData() {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function formatCurrency(amount) {
+function isPrivacyHidden() {
+  return !!window.CRM_PRIVACY_HIDE_NUMBERS;
+}
+function maskSensitiveNumber(value, suffix = '') {
+  if (!isPrivacyHidden()) return `${value}${suffix}`;
+  return `***${suffix}`;
+}
+function maskSensitiveText(value) {
+  if (!isPrivacyHidden() || value == null) return value;
+  const text = String(value);
+  if (/^-?\d+([.,]\d+)?$/.test(text.trim())) return '***';
+  return text
+    .replace(/\$[\s\u00a0]*[-+]?\d[\d.,]*/g, '$ ******')
+    .replace(/[-+]?\d+([.,]\d+)?\s*%/g, '**%')
+    .replace(/\b\d+\s*[x×]\s*/gi, '** x ')
+    .replace(/\b\d+([.,]\d+)?(?=\s*(cuotas?|dias|d[ií]as|operaciones?|vencimientos?|pagos?|clientes?|c\b))/gi, '**');
+}
+function formatCurrencyRaw(amount) {
   if (amount == null || isNaN(amount)) return '$0';
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+}
+function formatCurrency(amount) {
+  if (isPrivacyHidden()) return '$ ******';
+  return formatCurrencyRaw(amount);
 }
 function formatDate(dateStr) {
   if (!dateStr) return '—';
@@ -304,12 +325,27 @@ function App() {
   const [appData, setAppData] = React.useState(null);
   const [loadError, setLoadError] = React.useState(null);
   const [nav, setNav] = React.useState({ screen: 'dashboard', id: null, modal: null, extra: null });
+  const [privacyHidden, setPrivacyHidden] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem('crm-privacy-hidden');
+      return saved == null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  window.CRM_PRIVACY_HIDE_NUMBERS = privacyHidden;
 
   React.useEffect(() => {
     loadAllData()
       .then(data => setAppData(data))
       .catch(err  => setLoadError(err.message));
   }, []);
+
+  React.useEffect(() => {
+    window.CRM_PRIVACY_HIDE_NUMBERS = privacyHidden;
+    try { localStorage.setItem('crm-privacy-hidden', String(privacyHidden)); } catch {}
+  }, [privacyHidden]);
 
   if (loadError) {
     return (
@@ -410,7 +446,13 @@ function App() {
   }
 
   return (
-    <AppLayout current={nav.screen} onNav={onNav} searchData={searchData}>
+    <AppLayout
+      current={nav.screen}
+      onNav={onNav}
+      searchData={searchData}
+      privacyHidden={privacyHidden}
+      onTogglePrivacy={() => setPrivacyHidden(v => !v)}
+    >
       <div className="screen-enter" key={nav.screen + (nav.id || '')}>
         {renderScreen()}
       </div>

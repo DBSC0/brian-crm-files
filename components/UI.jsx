@@ -252,6 +252,8 @@ function KPICard({ label, value, sub, accent, icon, trend }) {
   };
   const c = colors[accent] || colors.slate;
   const bg = lightBg[accent] || '#f8fafc';
+  const displayValue = typeof maskSensitiveText === 'function' ? maskSensitiveText(value) : value;
+  const displaySub = typeof maskSensitiveText === 'function' ? maskSensitiveText(sub) : sub;
   return (
     <Card style={{ padding: '16px 20px', minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -264,8 +266,8 @@ function KPICard({ label, value, sub, accent, icon, trend }) {
           }}>{icon}</div>
         )}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: c, fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{sub}</div>}
+      <div style={{ fontSize: 22, fontWeight: 700, color: c, fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{displayValue}</div>
+      {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{displaySub}</div>}
     </Card>
   );
 }
@@ -423,7 +425,9 @@ function DataTable({ columns, data, onRowClick, emptyMessage = 'Sin datos', defa
                   fontSize: col.mono ? 12 : 13, whiteSpace: col.nowrap ? 'nowrap' : 'normal',
                   overflow: hasWidths ? 'hidden' : undefined, textOverflow: hasWidths ? 'ellipsis' : undefined,
                 }}>
-                  {col.render ? col.render(row[col.key], row) : row[col.key]}
+                  {col.render
+                    ? col.render(row[col.key], row)
+                    : (col.sensitive && typeof maskSensitiveText === 'function' ? maskSensitiveText(row[col.key]) : row[col.key])}
                 </td>
               ))}
             </tr>

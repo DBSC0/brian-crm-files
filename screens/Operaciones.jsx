@@ -14,6 +14,28 @@ function parseDatePaste(str) {
   return null;
 }
 
+function nextSequentialCode(items, prefix, field) {
+  const key = field || 'codigo';
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('^' + escaped + '-(\\d+)$');
+  const max = (items || []).reduce((highest, item) => {
+    const m = String((item && item[key]) || '').match(re);
+    return m ? Math.max(highest, Number(m[1]) || 0) : highest;
+  }, 0);
+  return prefix + '-' + String(max + 1).padStart(3, '0');
+}
+
+function nextSequentialCodes(items, prefix, count, field) {
+  const key = field || 'codigo';
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('^' + escaped + '-(\\d+)$');
+  const max = (items || []).reduce((highest, item) => {
+    const m = String((item && item[key]) || '').match(re);
+    return m ? Math.max(highest, Number(m[1]) || 0) : highest;
+  }, 0);
+  return Array.from({ length: count }, (_, i) => prefix + '-' + String(max + i + 1).padStart(3, '0'));
+}
+
 function NuevaOperacionModal({
   open,
   onClose,
@@ -356,7 +378,7 @@ function NuevaOperacionModal({
 
     const newOp = {
       id: 'op_' + Date.now(),
-      codigo: 'OP-' + String(data.operations.length + 1).padStart(3, '0'),
+      codigo: nextSequentialCode(data.operations, 'OP'),
       clientId: form.clientId,
       tipo: form.tipo,
       descripcion: form.descripcion,
@@ -383,9 +405,10 @@ function NuevaOperacionModal({
       notas: form.notas,
     };
 
+    const cuotaCodes = nextSequentialCodes(data.installments, 'CUO', schedule.length);
     const newInsts = schedule.map((s, i) => ({
       id: 'inst_' + Date.now() + '_' + i,
-      codigo: 'CUO-' + String(data.installments.length + i + 1).padStart(3, '0'),
+      codigo: cuotaCodes[i],
       operationId: newOp.id,
       clientId: form.clientId,
       numeroCuota: s.numero,
@@ -415,7 +438,7 @@ function NuevaOperacionModal({
 
     const newVoucher = {
       id: 'vou_' + Date.now(),
-      codigo: 'COMP-' + String(data.internalOperationVouchers.length + 1).padStart(3, '0'),
+      codigo: nextSequentialCode(data.internalOperationVouchers, 'COMP'),
       operationId: newOp.id,
       clientId: form.clientId,
       estado: 'Emitido',
@@ -988,7 +1011,7 @@ function NuevaOperacionModal({
                       justifyContent: 'center',
                     }}
                   >
-                    {s.numero}
+                    {maskSensitiveNumber(s.numero)}
                   </span>
 
                   <span
@@ -998,7 +1021,7 @@ function NuevaOperacionModal({
                       fontFamily: 'DM Sans, sans-serif',
                     }}
                   >
-                    Cuota {s.numero}/{form.cantidadCuotas}
+                    Cuota {maskSensitiveNumber(s.numero)}/{maskSensitiveNumber(form.cantidadCuotas)}
                   </span>
                 </div>
 
@@ -1041,8 +1064,8 @@ function NuevaOperacionModal({
 
           <div style={{ fontSize: 14, color: '#64748b', marginBottom: 20 }}>
             {isEdit
-              ? `Se van a actualizar los datos de la operación: ${form.cantidadCuotas} cuota(s) recalculadas, movimientos de caja y tarjeta actualizados.`
-              : `Se va a crear la operación con ${form.cantidadCuotas} cuota(s), un comprobante interno y el movimiento de caja correspondiente.`}
+              ? `Se van a actualizar los datos de la operación: ${maskSensitiveNumber(form.cantidadCuotas)} cuota(s) recalculadas, movimientos de caja y tarjeta actualizados.`
+              : `Se va a crear la operación con ${maskSensitiveNumber(form.cantidadCuotas)} cuota(s), un comprobante interno y el movimiento de caja correspondiente.`}
           </div>
 
           <div
@@ -1059,7 +1082,7 @@ function NuevaOperacionModal({
             <CalcRow label="Tipo" value={form.tipo} />
             <CalcRow label="Redondeo de cuotas" value={form.redondearCuotas ? 'Activado' : 'Desactivado'} />
             <CalcRow label="Total a cobrar" value={formatCurrency(totals.totalEsperado)} bold />
-            <CalcRow label="Cuotas" value={`${form.cantidadCuotas} × ${formatCurrency(totals.valorCuota)}`} />
+            <CalcRow label="Cuotas" value={`${maskSensitiveNumber(form.cantidadCuotas)} x ${formatCurrency(totals.valorCuota)}`} />
             <CalcRow label="Ganancia esperada" value={formatCurrency(totals.gananciaEsperada)} bold accent="#16a34a" />
           </div>
         </div>
@@ -1095,7 +1118,25 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
 
   async function handleSave(newOp, newInsts, newCash, newVoucher, newCCMovs) {
     const sb = window.__supabase;
+    const [
+      { data: currentOps, error: currentOpsError },
+      { data: currentInsts, error: currentInstsError },
+      { data: currentVouchers, error: currentVouchersError },
+    ] = await Promise.all([
+      sb.from('operations').select('codigo'),
+      sb.from('installments').select('codigo'),
+      sb.from('internal_operation_vouchers').select('codigo'),
+    ]);
+    if (currentOpsError) { alert('Error verificando operaciones: ' + currentOpsError.message); return; }
+    if (currentInstsError) { alert('Error verificando cuotas: ' + currentInstsError.message); return; }
+    if (currentVouchersError) { alert('Error verificando comprobantes: ' + currentVouchersError.message); return; }
+
+    const operationCode = nextSequentialCode(currentOps || data.operations, 'OP');
+    const installmentCodes = nextSequentialCodes(currentInsts || data.installments, 'CUO', newInsts.length);
+    const voucherCode = nextSequentialCode(currentVouchers || data.internalOperationVouchers, 'COMP');
+
     const opPayload = toSnake({
+      codigo:            operationCode,
       clientId:          newOp.clientId,
       tipo:              newOp.tipo,
       descripcion:       newOp.descripcion,
@@ -1117,14 +1158,20 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
       estado:            'Activa',
       notas:             newOp.notas || null,
     });
-    const instsPayload = newInsts.map(i => ({
+    const instsPayload = newInsts.map((i, idx) => ({
+      codigo:            installmentCodes[idx],
       numero_cuota:      i.numeroCuota,
       total_cuotas:      i.totalCuotas,
       fecha_vencimiento: i.fechaVencimiento,
       monto_programado:  i.montoProgramado,
     }));
-    const cashPayload = { tipo: newCash.tipo, monto: newCash.monto, descripcion: newCash.descripcion, fecha: newCash.fechaInicio || newOp.fechaInicio };
-    const voucherPayload = { fecha: newVoucher.fecha || newOp.fechaInicio };
+    const cashPayload = {
+      tipo: newCash.tipo,
+      monto: newCash.monto,
+      descripcion: `${operationCode} — ${newOp.descripcion}`,
+      fecha: newCash.fecha || newOp.fechaInicio,
+    };
+    const voucherPayload = { codigo: voucherCode, fecha: newVoucher.fecha || newOp.fechaInicio };
     const ccPayload = newCCMovs.length > 0 ? {
       credit_card_id:              newCCMovs[0].creditCardId,
       fecha_compra:                newCCMovs[0].fechaCompra,
@@ -1177,8 +1224,8 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
     }},
     { key: 'tipo', label: 'Tipo', render: v => <span style={{ fontSize: 11, padding: '2px 8px', background: '#f1f5f9', borderRadius: 6, color: '#475569', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>{v}</span> },
     { key: 'descripcion', label: 'Descripción' },
-    { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${v} × ${formatCurrency(row.valorCuota)}` },
-    { key: 'tasaInteres', label: 'Tasa', render: v => `${v}%` },
+    { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${maskSensitiveNumber(v)} x ${formatCurrency(row.valorCuota)}` },
+    { key: 'tasaInteres', label: 'Tasa', render: v => maskSensitiveNumber(v, '%') },
     { key: 'totalEsperado', label: 'Total', mono: true, render: v => <span style={{ fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(v)}</span> },
     { key: 'gananciaEsperada', label: 'Ganancia', mono: true, render: v => <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: '#16a34a' }}>{formatCurrency(v)}</span> },
     { key: 'fuenteFinanciacion', label: 'Fuente', render: v => <span style={{ fontSize: 11, color: '#64748b' }}>{v}</span> },
@@ -1467,7 +1514,7 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
                         borderLeft: `3px solid ${s.border}`,
                       }}>
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Cuota {inst.numeroCuota}/{inst.totalCuotas}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
                           <div style={{ fontSize: 11, color: s.dateColor, fontWeight: s.dateColor !== '#94a3b8' ? 600 : 400 }}>{formatDate(inst.fechaVencimiento)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
@@ -1631,7 +1678,7 @@ function InternalVoucherPreview({ op, client, voucher, installments }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Cronograma de vencimientos</div>
             {opInst.sort((a, b) => a.numeroCuota - b.numeroCuota).map(i => (
               <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', fontSize: 12, borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ color: '#374151' }}>Cuota {i.numeroCuota}/{i.totalCuotas}</span>
+                <span style={{ color: '#374151' }}>Cuota {maskSensitiveNumber(i.numeroCuota)}/{maskSensitiveNumber(i.totalCuotas)}</span>
                 <span style={{ color: '#374151' }}>{formatDate(i.fechaVencimiento)}</span>
                 <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(i.montoProgramado)}</span>
               </div>

@@ -2,10 +2,12 @@
 function CuotasScreen({ data, onNav }) {
   const { clients, operations, installments } = data;
   const [filters, setFilters] = React.useState({});
+  const [showPaid, setShowPaid] = React.useState(false);
   const today = new Date();
 
   const filtered = installments.filter(i => {
     if (filters.estado && i.estado !== filters.estado) return false;
+    if (!filters.estado && !showPaid && (i.estado === 'Pagada' || i.saldoPendiente === 0)) return false;
     if (filters.cliente) {
       const c = clients.find(cl => cl.id === i.clientId);
       if (!c?.nombre.toLowerCase().includes(filters.cliente.toLowerCase())) return false;
@@ -49,6 +51,7 @@ function CuotasScreen({ data, onNav }) {
     parciales: installments.filter(i => i.estado === 'Parcial').length,
     pagadas: installments.filter(i => i.estado === 'Pagada').length,
   };
+  const paidHidden = !filters.estado && !showPaid ? stats.pagadas : 0;
 
   function cuotaRowStyle(row) {
     if (row.estado === 'Pagada' || row.saldoPendiente === 0) return {};
@@ -80,7 +83,30 @@ function CuotasScreen({ data, onNav }) {
             <option value="">Todos los estados</option>
             {['Pendiente','Parcial','Pagada','Vencida','Refinanciada','Anulada'].map(s => <option key={s}>{s}</option>)}
           </select>
-          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>{filtered.length} cuota{filtered.length !== 1 ? 's' : ''}</span>
+          <button
+            type="button"
+            onClick={() => setShowPaid(v => !v)}
+            disabled={filters.estado === 'Pagada'}
+            title={filters.estado === 'Pagada' ? 'El filtro Pagada ya muestra cuotas pagadas' : showPaid ? 'Ocultar cuotas pagadas' : 'Mostrar cuotas pagadas'}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: `1.5px solid ${showPaid ? '#bbf7d0' : '#e2e8f0'}`,
+              background: showPaid ? '#f0fdf4' : '#fff',
+              color: showPaid ? '#166534' : '#64748b',
+              fontSize: 12,
+              fontWeight: 700,
+              fontFamily: 'DM Sans, sans-serif',
+              cursor: filters.estado === 'Pagada' ? 'not-allowed' : 'pointer',
+              opacity: filters.estado === 'Pagada' ? 0.6 : 1,
+            }}
+          >
+            {filters.estado === 'Pagada' ? 'Pagadas por filtro' : showPaid ? '✓ Pagadas visibles' : 'Pagadas ocultas'}
+          </button>
+          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>
+            {maskSensitiveNumber(filtered.length)} cuota{filtered.length !== 1 ? 's' : ''}
+            {paidHidden > 0 ? ` · ${maskSensitiveNumber(paidHidden)} pagadas ocultas` : ''}
+          </span>
         </div>
         <DataTable columns={columns} data={filtered} emptyMessage="Sin cuotas" defaultSortKey="fechaVencimiento" defaultSortDir="asc" tableId="cuotas" rowStyle={cuotaRowStyle} />
       </Card>
@@ -262,7 +288,7 @@ function RegistrarPagoModal({ open, onClose, onSave, data, preselectedClientId, 
                     }}>
                       <div>
                         <span style={{ fontSize: 11, color: '#64748b' }}>{inst.codigo} · {op?.codigo}</span>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Cuota {inst.numeroCuota}/{inst.totalCuotas} — vence {formatDate(inst.fechaVencimiento)}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)} — vence {formatDate(inst.fechaVencimiento)}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(inst.saldoPendiente)}</span>
@@ -400,7 +426,7 @@ function PagosScreen({ data, onNav, onDataChange, openNewModal, preselectedClien
             <option value="">Todos los métodos</option>
             {['Efectivo','Transferencia','Mercado Pago','Cheque','Otro'].map(m => <option key={m}>{m}</option>)}
           </select>
-          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>{filtered.length} pago{filtered.length !== 1 ? 's' : ''} · {formatCurrency(totalCobrado)}</span>
+          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>{maskSensitiveNumber(filtered.length)} pago{filtered.length !== 1 ? 's' : ''} · {formatCurrency(totalCobrado)}</span>
         </div>
         <DataTable columns={columns} data={filtered} emptyMessage="Sin pagos" defaultSortKey="fechaPago" defaultSortDir="desc" tableId="pagos" />
       </Card>
@@ -504,7 +530,7 @@ function ReceiptPreview({ receipt, data, onDataChange }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Detalle de cuotas canceladas / abonadas</div>
             {allocInst.map((a, i) => a.inst && (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f8fafc', fontSize: 12 }}>
-                <span style={{ color: '#374151' }}>{a.op?.codigo} — Cuota {a.inst.numeroCuota}/{a.inst.totalCuotas} ({formatDate(a.inst.fechaVencimiento)})</span>
+                <span style={{ color: '#374151' }}>{a.op?.codigo} — Cuota {maskSensitiveNumber(a.inst.numeroCuota)}/{maskSensitiveNumber(a.inst.totalCuotas)} ({formatDate(a.inst.fechaVencimiento)})</span>
                 <span style={{ fontWeight: 700, fontFamily: 'DM Mono, monospace' }}>{formatCurrency(a.montoAplicado)}</span>
               </div>
             ))}

@@ -195,7 +195,7 @@ function ReportesScreen({ data }) {
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '10px 14px', background: '#f8fafc', borderRadius: 8 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{label}</div>
-                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{cuotas.length} cuota{cuotas.length !== 1 ? 's' : ''}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{maskSensitiveNumber(cuotas.length)} cuota{cuotas.length !== 1 ? 's' : ''}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: 15, fontWeight: 700, color: min >= 30 ? '#7f1d1d' : min >= 16 ? '#dc2626' : '#d97706', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(monto)}</div>
