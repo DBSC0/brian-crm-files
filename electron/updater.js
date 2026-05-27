@@ -15,6 +15,8 @@ const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO
 
 const CONTENT_FILES = [
   'index.html',
+  'core/finance.js',
+  'core/data-store.js',
   'components/supabase-client.js',
   'components/Layout.jsx',
   'components/StatusBadge.jsx',
@@ -25,9 +27,13 @@ const CONTENT_FILES = [
   'screens/CuotasPagosRecibos.jsx',
   'screens/Dashboard.jsx',
   'screens/ImportarDatos.jsx',
+  'screens/LoginScreen.jsx',
   'screens/Operaciones.jsx',
+  'screens/OrganizationSelector.jsx',
   'screens/Reportes.jsx',
   'screens/Tarjetas.jsx',
+  'screens/UnauthorizedScreen.jsx',
+  'screens/UsersPermissions.jsx',
   'data/helpers.js',
   'data/mockData.js',
   'version.txt',

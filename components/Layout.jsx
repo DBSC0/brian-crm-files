@@ -34,7 +34,16 @@ function PrivacyEyeIcon({ hidden }) {
   );
 }
 
-function Sidebar({ current, onNav, collapsed, onToggle, privacyHidden, onTogglePrivacy }) {
+function Sidebar({ current, onNav, collapsed, onToggle, privacyHidden, onTogglePrivacy, authState, onLogout, onSelectOrg, settings }) {
+  const branding     = settings?.branding || {};
+  const appName      = branding.appName      || 'Facciano';
+  const appSubtitle  = branding.appSubtitle  || 'Sistema financiero';
+  const accentColor  = branding.accentColor  || '#818cf8';
+  const initials     = branding.initials     || appName.slice(0, 2).toUpperCase();
+  const logoUrl      = branding.logoUrl      || '';
+  const showTitle    = branding.showSidebarTitle    !== false;
+  const showSubtitle = branding.showSidebarSubtitle !== false;
+
   return (
     <aside style={{
       width: collapsed ? 60 : 220,
@@ -47,22 +56,38 @@ function Sidebar({ current, onNav, collapsed, onToggle, privacyHidden, onToggleP
     }}>
       {/* Logo */}
       <div style={{
-        padding: collapsed ? '20px 0' : '20px 16px',
+        padding: collapsed ? '16px 0' : '16px 14px',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
         display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between',
+        gap: 8,
       }}>
-        {!collapsed && (
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', fontFamily: 'DM Sans, sans-serif' }}>
-              Facciano <span style={{ color: '#818cf8' }}>CRM</span>
+        {/* Brand badge — collapsed or expanded */}
+        {collapsed ? (
+          logoUrl
+            ? <img src={logoUrl} alt={appName} style={{ width: 28, height: 28, borderRadius: 7, objectFit: 'cover' }} />
+            : <div style={{ width: 28, height: 28, borderRadius: 7, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#fff', flexShrink: 0 }}>{initials}</div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+            {logoUrl
+              ? <img src={logoUrl} alt={appName} style={{ width: 28, height: 28, borderRadius: 7, objectFit: 'cover', flexShrink: 0 }} />
+              : <div style={{ width: 28, height: 28, borderRadius: 7, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#fff', flexShrink: 0 }}>{initials}</div>
+            }
+            <div style={{ minWidth: 0 }}>
+              {showTitle && (
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {appName} <span style={{ color: accentColor }}>CRM</span>
+                </div>
+              )}
+              {showSubtitle && (
+                <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appSubtitle}</div>
+              )}
             </div>
-            <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace', marginTop: 1 }}>Sistema financiero</div>
           </div>
         )}
         <button onClick={onToggle} style={{
           background: 'rgba(255,255,255,0.07)', border: 'none', borderRadius: 6,
           color: '#94a3b8', cursor: 'pointer', padding: '4px 6px', fontSize: 14,
-          display: 'flex', alignItems: 'center',
+          display: 'flex', alignItems: 'center', flexShrink: 0,
         }}>
           {collapsed ? '▶' : '◀'}
         </button>
@@ -94,40 +119,91 @@ function Sidebar({ current, onNav, collapsed, onToggle, privacyHidden, onToggleP
       {!collapsed && (
         <div style={{
           padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)',
-          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0,
         }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0,
-          }}>B</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'DM Sans, sans-serif' }}>Brian Facciano</div>
-            <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace' }}>Administrador</div>
+          {/* Org badge */}
+          {authState?.currentOrganization && (
+            <div style={{
+              fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace',
+              background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '3px 8px',
+              border: '1px solid rgba(255,255,255,0.06)', textAlign: 'center',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {authState.currentOrganization.name}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Avatar */}
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0,
+            }}>
+              {(authState?.profile?.full_name || authState?.user?.email || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'DM Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {authState?.profile?.full_name || authState?.user?.email || 'Usuario'}
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', fontFamily: 'DM Mono, monospace' }}>
+                {authState?.membership?.role || 'miembro'}
+              </div>
+            </div>
+            <button
+              onClick={onTogglePrivacy}
+              title={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
+              aria-label={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
+              style={{
+                width: 28, height: 28, borderRadius: 7,
+                border: '1px solid rgba(148,163,184,0.22)',
+                background: privacyHidden ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.06)',
+                color: privacyHidden ? '#c4b5fd' : '#94a3b8',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <PrivacyEyeIcon hidden={privacyHidden} />
+            </button>
           </div>
-          <button
-            onClick={onTogglePrivacy}
-            title={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
-            aria-label={privacyHidden ? 'Mostrar cifras' : 'Ocultar cifras'}
-            style={{
-              width: 32, height: 32, borderRadius: 9,
-              border: '1px solid rgba(148,163,184,0.22)',
-              background: privacyHidden ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.06)',
-              color: privacyHidden ? '#c4b5fd' : '#94a3b8',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <PrivacyEyeIcon hidden={privacyHidden} />
-          </button>
+          {/* Switch org — solo si tiene más de una */}
+          {onSelectOrg && authState?.organizations?.length > 1 && (
+            <button
+              onClick={onSelectOrg}
+              style={{
+                width: '100%', padding: '6px 0', borderRadius: 7,
+                border: '1px solid rgba(99,102,241,0.25)',
+                background: 'rgba(99,102,241,0.08)', color: '#a5b4fc',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.02em',
+              }}
+            >
+              ⇄ Cambiar organización
+            </button>
+          )}
+          {/* Logout */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              style={{
+                width: '100%', padding: '6px 0', borderRadius: 7,
+                border: '1px solid rgba(239,68,68,0.2)',
+                background: 'rgba(239,68,68,0.06)', color: '#f87171',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.02em',
+              }}
+            >
+              Cerrar sesión
+            </button>
+          )}
         </div>
       )}
     </aside>
   );
 }
 
-function Header({ onNav, searchData }) {
+function Header({ onNav, searchData, onGoBack, settings }) {
+  const acciones = settings?.uiPreferences?.accionesRapidas || ['cliente', 'operacion', 'pago'];
   const [query, setQuery] = React.useState('');
   const [results, setResults] = React.useState([]);
   const [showResults, setShowResults] = React.useState(false);
@@ -163,13 +239,19 @@ function Header({ onNav, searchData }) {
 
   return (
     <header style={{
-      height: 56, background: '#fff', borderBottom: '1px solid #f1f5f9',
+      height: 56, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)',
       display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px',
       flexShrink: 0, zIndex: 50, boxShadow: '0 1px 4px rgba(15,23,42,0.06)',
     }}>
+      {/* Back button */}
+      {onGoBack && (
+        <button onClick={onGoBack} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }} title="Volver">
+          ←
+        </button>
+      )}
       {/* Search */}
       <div style={{ position: 'relative', flex: 1, maxWidth: 400 }}>
-        <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 14, pointerEvents: 'none' }}>🔍</div>
+        <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)', fontSize: 14, pointerEvents: 'none' }}>🔍</div>
         <input
           value={query} onChange={e => setQuery(e.target.value)}
           onFocus={() => results.length > 0 && setShowResults(true)}
@@ -177,22 +259,22 @@ function Header({ onNav, searchData }) {
           placeholder="Buscar clientes, operaciones, cuotas..."
           style={{
             width: '100%', padding: '7px 12px 7px 32px', borderRadius: 8,
-            border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a',
-            fontFamily: 'DM Sans, sans-serif', outline: 'none', boxSizing: 'border-box',
+            border: '1.5px solid var(--border)', fontSize: 13, color: 'var(--text-primary)',
+            background: 'var(--bg-surface)', fontFamily: 'DM Sans, sans-serif', outline: 'none', boxSizing: 'border-box',
           }}
         />
         {showResults && results.length > 0 && (
           <div style={{
             position: 'absolute', top: '110%', left: 0, right: 0,
-            background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0',
+            background: 'var(--bg-surface)', borderRadius: 10, border: '1px solid var(--border)',
             boxShadow: '0 8px 32px rgba(15,23,42,0.15)', zIndex: 200, overflow: 'hidden',
           }}>
             {results.map((r, i) => (
               <div key={i} onClick={() => { onNav(r.nav, r.navId); setQuery(''); setShowResults(false); }} style={{
-                padding: '10px 14px', cursor: 'pointer', borderBottom: i < results.length - 1 ? '1px solid #f8fafc' : 'none',
+                padding: '10px 14px', cursor: 'pointer', borderBottom: i < results.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-page)'}
               onMouseLeave={e => e.currentTarget.style.background = ''}
               >
                 <span style={{
@@ -200,8 +282,8 @@ function Header({ onNav, searchData }) {
                   background: '#eef2ff', color: '#4f46e5', fontFamily: 'DM Mono, monospace',
                 }}>{r.type}</span>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{r.label}</div>
-                  {r.sub && <div style={{ fontSize: 11, color: '#94a3b8' }}>{r.sub}</div>}
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{r.label}</div>
+                  {r.sub && <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{r.sub}</div>}
                 </div>
               </div>
             ))}
@@ -213,18 +295,18 @@ function Header({ onNav, searchData }) {
 
       {/* Quick actions */}
       <div style={{ display: 'flex', gap: 8 }}>
-        <Btn size="sm" onClick={() => onNav('clientes', null, 'nuevo')}>+ Cliente</Btn>
-        <Btn size="sm" onClick={() => onNav('operaciones', null, 'nuevo')}>+ Operación</Btn>
-        <Btn size="sm" variant="secondary" onClick={() => onNav('pagos', null, 'nuevo')}>💳 Pago</Btn>
+        {acciones.includes('cliente')   && <Btn size="sm" onClick={() => onNav('clientes', null, 'nuevo')}>+ Cliente</Btn>}
+        {acciones.includes('operacion') && <Btn size="sm" onClick={() => onNav('operaciones', null, 'nuevo')}>+ Operación</Btn>}
+        {acciones.includes('pago')      && <Btn size="sm" variant="secondary" onClick={() => onNav('pagos', null, 'nuevo')}>💳 Pago</Btn>}
       </div>
     </header>
   );
 }
 
-function AppLayout({ children, current, onNav, searchData, privacyHidden, onTogglePrivacy }) {
+function AppLayout({ children, current, onNav, onGoBack, searchData, privacyHidden, onTogglePrivacy, authState, onLogout, onSelectOrg, settings }) {
   const [collapsed, setCollapsed] = React.useState(false);
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f8fafc' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-page)' }}>
       <Sidebar
         current={current}
         onNav={(id) => onNav(id)}
@@ -232,9 +314,13 @@ function AppLayout({ children, current, onNav, searchData, privacyHidden, onTogg
         onToggle={() => setCollapsed(c => !c)}
         privacyHidden={privacyHidden}
         onTogglePrivacy={onTogglePrivacy}
+        authState={authState}
+        onLogout={onLogout}
+        onSelectOrg={onSelectOrg}
+        settings={settings}
       />
       <div style={{ flex: 1, height: '100vh', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-        <Header onNav={onNav} searchData={searchData} />
+        <Header onNav={onNav} searchData={searchData} onGoBack={onGoBack} settings={settings} />
         <main style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
           {children}
         </main>

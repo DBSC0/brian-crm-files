@@ -9,6 +9,7 @@ directories:
 files:
   - electron/**/*
   - index.html
+  - core/**/*
   - components/**/*
   - screens/**/*
   - data/**/*

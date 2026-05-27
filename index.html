@@ -9,12 +9,22 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; font-family: 'DM Sans', sans-serif; background: #f8fafc; color: #0f172a; }
+    :root {
+      --bg-page: #f8fafc; --bg-surface: #ffffff; --bg-subtle: #f1f5f9; --bg-muted: #e2e8f0;
+      --text-primary: #0f172a; --text-secondary: #374151; --text-muted: #64748b; --text-faint: #94a3b8;
+      --border: #e2e8f0; --border-subtle: #f1f5f9;
+    }
+    [data-theme="oscuro"] {
+      --bg-page: #0f172a; --bg-surface: #1e293b; --bg-subtle: #273549; --bg-muted: #334155;
+      --text-primary: #f1f5f9; --text-secondary: #cbd5e1; --text-muted: #94a3b8; --text-faint: #64748b;
+      --border: #334155; --border-subtle: #273549;
+    }
+    html, body { height: 100%; overflow: hidden; font-family: 'DM Sans', sans-serif; background: var(--bg-page); color: var(--text-primary); }
     #root { height: 100%; overflow: hidden; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #f1f5f9; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    ::-webkit-scrollbar-track { background: var(--bg-subtle); }
+    ::-webkit-scrollbar-thumb { background: var(--bg-muted); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
     @media print {
       nav, aside, header, .no-print { display: none !important; }
       body { background: white; }
@@ -32,6 +42,8 @@
 <!-- Supabase (debe ir ANTES de React y los componentes) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="components/supabase-client.js"></script>
+<script src="core/finance.js"></script>
+<script src="core/data-store.js"></script>
 
 <!-- React -->
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
@@ -43,6 +55,17 @@
 <script type="text/babel">
 // ─── MAPEO camelCase (React) ↔ snake_case (Postgres) ─────────────────────────
 const KEY_MAP = {
+  // multi-tenancy / auth
+  organization_id: 'organizationId',
+  created_by:      'createdBy',
+  updated_by:      'updatedBy',
+  invited_by:      'invitedBy',
+  invited_at:      'invitedAt',
+  joined_at:       'joinedAt',
+  last_seen_at:    'lastSeenAt',
+  permission_key:  'permissionKey',
+  full_name:       'fullName',
+  avatar_url:      'avatarUrl',
   // clients
   telefono_secundario: 'telefonoSecundario',
   created_at: 'createdAt',
@@ -62,6 +85,17 @@ const KEY_MAP = {
   credit_card_id: 'creditCardId',
   fecha_inicio: 'fechaInicio',
   primer_vencimiento: 'primerVencimiento',
+  tipo_cambio: 'tipoCambio',
+  tipo_cambio_fuente: 'tipoCambioFuente',
+  costo_real_base: 'costoRealBase',
+  monto_pactado_base: 'montoPactadoBase',
+  entrega_base: 'entregaBase',
+  monto_financiado_base: 'montoFinanciadoBase',
+  interes_calculado_base: 'interesCalculadoBase',
+  total_financiado_base: 'totalFinanciadoBase',
+  valor_cuota_base: 'valorCuotaBase',
+  total_esperado_base: 'totalEsperadoBase',
+  ganancia_esperada_base: 'gananciaEsperadaBase',
   // installments
   operation_id: 'operationId',
   numero_cuota: 'numeroCuota',
@@ -71,15 +105,47 @@ const KEY_MAP = {
   monto_pagado: 'montoPagado',
   saldo_pendiente: 'saldoPendiente',
   mora_aplicada: 'moraAplicada',
+  mora_pagada: 'moraPagada',
+  mora_condonada: 'moraCondonada',
+  mora_actualizada_hasta: 'moraActualizadaHasta',
+  mora_tasa_diaria: 'moraTasaDiaria',
+  mora_dias_gracia: 'moraDiasGracia',
+  mora_base_calculo: 'moraBaseCalculo',
+  mora_tipo_calculo: 'moraTipoCalculo',
+  mora_congelada: 'moraCongelada',
+  monto_programado_base: 'montoProgramadoBase',
+  monto_pagado_base: 'montoPagadoBase',
+  saldo_pendiente_base: 'saldoPendienteBase',
+  mora_aplicada_base: 'moraAplicadaBase',
   // payments
   fecha_pago: 'fechaPago',
   metodo_pago: 'metodoPago',
   receipt_id: 'receiptId',
+  monto_base: 'montoBase',
   // receipts
   payment_id: 'paymentId',
   // payment_allocations
   installment_id: 'installmentId',
   monto_aplicado: 'montoAplicado',
+  payment_moneda: 'paymentMoneda',
+  installment_moneda: 'installmentMoneda',
+  tipo_cambio_pago: 'tipoCambioPago',
+  tipo_cambio_installment: 'tipoCambioInstallment',
+  monto_pago_aplicado: 'montoPagoAplicado',
+  monto_aplicado_base: 'montoAplicadoBase',
+  monto_cuota_aplicado_base: 'montoCuotaAplicadoBase',
+  monto_cuota_aplicado: 'montoCuotaAplicado',
+  monto_mora_aplicado: 'montoMoraAplicado',
+  monto_mora_aplicado_base: 'montoMoraAplicadoBase',
+  // installment_mora_events
+  installment_id: 'installmentId',
+  dias_aplicados: 'diasAplicados',
+  tasa_diaria: 'tasaDiaria',
+  base_calculo: 'baseCalculo',
+  tipo_calculo: 'tipoCalculo',
+  monto_mora: 'montoMora',
+  monto_anterior: 'montoAnterior',
+  monto_nuevo: 'montoNuevo',
   // credit_cards
   ultimos_digitos: 'ultimosDigitos',
   limite_total: 'limiteTotal',
@@ -107,6 +173,8 @@ const KEY_MAP = {
   datos_prestamista: 'datosPrestamista',
   plantillas_whatsapp: 'plantillasWhatsapp',
   parametros_financieros: 'parametrosFinancieros',
+  branding: 'branding',
+  ui_preferences: 'uiPreferences',
 };
 
 const KEY_MAP_REVERSE = Object.fromEntries(
@@ -135,7 +203,8 @@ function toSnake(obj) {
 // ─── CARGA ASYNC DESDE SUPABASE ───────────────────────────────────────────────
 const sb = window.__supabase;
 
-async function loadAllData() {
+async function loadAllData(orgId) {
+  if (!orgId) throw new Error('organization_id requerido para cargar datos');
   const [
     { data: clients,    error: e1  },
     { data: operations, error: e2  },
@@ -151,25 +220,27 @@ async function loadAllData() {
     { data: attachments, error: e12 },
     { data: settingsRow, error: e13 },
     { data: ccStmtPayments, error: e14 },
+    { data: moraEvents, error: e15 },
   ] = await Promise.all([
-    sb.from('clients').select('*').order('created_at'),
-    sb.from('operations').select('*').order('fecha_inicio'),
-    sb.from('installments').select('*').order('fecha_vencimiento'),
-    sb.from('payments').select('*').order('fecha_pago'),
-    sb.from('payment_allocations').select('*'),
-    sb.from('receipts').select('*').order('fecha'),
-    sb.from('internal_operation_vouchers').select('*').order('fecha'),
-    sb.from('credit_cards').select('*'),
-    sb.from('credit_card_movements').select('*').order('fecha_compra'),
-    sb.from('cash_movements').select('*').order('fecha'),
-    sb.from('client_notes').select('*').order('fecha'),
-    sb.from('attachments').select('*').order('fecha'),
-    sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
-    sb.from('credit_card_statement_payments').select('*').order('año').order('mes'),
+    sb.from('clients').select('*').eq('organization_id', orgId).order('created_at'),
+    sb.from('operations').select('*').eq('organization_id', orgId).order('fecha_inicio'),
+    sb.from('installments').select('*').eq('organization_id', orgId).order('fecha_vencimiento'),
+    sb.from('payments').select('*').eq('organization_id', orgId).order('fecha_pago'),
+    sb.from('payment_allocations').select('*').eq('organization_id', orgId),
+    sb.from('receipts').select('*').eq('organization_id', orgId).order('fecha'),
+    sb.from('internal_operation_vouchers').select('*').eq('organization_id', orgId).order('fecha'),
+    sb.from('credit_cards').select('*').eq('organization_id', orgId),
+    sb.from('credit_card_movements').select('*').eq('organization_id', orgId).order('fecha_compra'),
+    sb.from('cash_movements').select('*').eq('organization_id', orgId).order('fecha'),
+    sb.from('client_notes').select('*').eq('organization_id', orgId).order('fecha'),
+    sb.from('attachments').select('*').eq('organization_id', orgId).order('fecha'),
+    sb.from('app_settings').select('*').eq('organization_id', orgId).maybeSingle(),
+    sb.from('credit_card_statement_payments').select('*').eq('organization_id', orgId).order('año').order('mes'),
+    sb.from('installment_mora_events').select('*').eq('organization_id', orgId).order('fecha', { ascending: false }).limit(500),
   ]);
 
-  const tableNames = ['clients','operations','installments','payments','payment_allocations','receipts','internal_operation_vouchers','credit_cards','credit_card_movements','cash_movements','client_notes','attachments','app_settings','credit_card_statement_payments'];
-  const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14];
+  const tableNames = ['clients','operations','installments','payments','payment_allocations','receipts','internal_operation_vouchers','credit_cards','credit_card_movements','cash_movements','client_notes','attachments','app_settings','credit_card_statement_payments','installment_mora_events'];
+  const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15];
   const firstError = errors.find(Boolean);
   if (firstError) {
     const idx = errors.indexOf(firstError);
@@ -179,7 +250,7 @@ async function loadAllData() {
   const sr = settingsRow ? toCamel(settingsRow) : {};
   const settings = {
     tasasPorCuotas:        sr.tasasPorCuotas       || [],
-    metodosPago:           sr.metodosPago          || [],
+    metodosPago:           normalizePaymentMethods(sr.metodosPago || []),
     estadosCliente:        sr.estadosCliente        || [],
     estadosOperacion:      sr.estadosOperacion      || [],
     estadosCuota:          sr.estadosCuota          || [],
@@ -188,6 +259,8 @@ async function loadAllData() {
     datosPrestamista:      sr.datosPrestamista      || {},
     plantillasWhatsapp:    sr.plantillasWhatsapp    || [],
     parametrosFinancieros: sr.parametrosFinancieros || {},
+    branding:              sr.branding              || {},
+    uiPreferences:         sr.uiPreferences         || {},
   };
 
   return {
@@ -202,6 +275,7 @@ async function loadAllData() {
     creditCards:                    rowsToCamel(creditCards),
     creditCardMovements:            rowsToCamel(ccMovements),
     creditCardStatementPayments:    rowsToCamel(ccStmtPayments || []),
+    installmentMoraEvents:          rowsToCamel(moraEvents || []),
     cashMovements:                  rowsToCamel(cashMovements),
     clientNotes:               rowsToCamel(clientNotes),
     attachments:               rowsToCamel(attachments),
@@ -209,6 +283,15 @@ async function loadAllData() {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+// Compatibilidad gradual: la fuente nueva vive en core/data-store.js.
+// Dejamos los helpers antiguos definidos para no romper pantallas cargadas en cache.
+if (window.CRMData) {
+  toCamel = window.CRMData.toCamel;
+  rowsToCamel = window.CRMData.rowsToCamel;
+  toSnake = window.CRMData.toSnake;
+  loadAllData = window.CRMData.loadAllData;
+}
+
 function isPrivacyHidden() {
   return !!window.CRM_PRIVACY_HIDE_NUMBERS;
 }
@@ -230,9 +313,167 @@ function formatCurrencyRaw(amount) {
   if (amount == null || isNaN(amount)) return '$0';
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 }
+function normalizeCurrency(currency) {
+  return currency === 'USD' ? 'USD' : 'ARS';
+}
+function normalizeExchangeRate(exchangeRate) {
+  const n = Number(exchangeRate);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+function formatMoneyRaw(amount, currency = 'ARS') {
+  const curr = normalizeCurrency(currency);
+  const n = Number(amount || 0);
+  if (curr === 'USD') {
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n).replace('US$', 'US$');
+  }
+  return formatCurrencyRaw(n);
+}
+function formatMoney(amount, currency = 'ARS') {
+  if (isPrivacyHidden()) return normalizeCurrency(currency) === 'USD' ? 'US$ ******' : '$ ******';
+  return formatMoneyRaw(amount, currency);
+}
+function toBaseAmount(amount, currency = 'ARS', exchangeRate = 1) {
+  const n = Number(amount || 0);
+  return normalizeCurrency(currency) === 'USD' ? n * normalizeExchangeRate(exchangeRate) : n;
+}
+function convertMoney(amount, fromCurrency = 'ARS', toCurrency = 'ARS', exchangeRate = 1) {
+  const n = Number(amount || 0);
+  const from = normalizeCurrency(fromCurrency);
+  const to = normalizeCurrency(toCurrency);
+  const rate = normalizeExchangeRate(exchangeRate);
+  if (from === to) return n;
+  if (from === 'USD' && to === 'ARS') return n * rate;
+  if (from === 'ARS' && to === 'USD') return n / rate;
+  return n;
+}
+function formatMoneyWithEquivalent(amount, currency = 'ARS', exchangeRate = 1, options = {}) {
+  const curr = normalizeCurrency(currency);
+  const base = toBaseAmount(amount, curr, exchangeRate);
+  const primary = formatMoney(amount, curr);
+  const showEquivalent = options.always || curr === 'USD';
+  if (!showEquivalent) return primary;
+  const suffix = options.compact ? ` ≈ ${formatMoney(base, 'ARS')}` : ` (equiv. ${formatMoney(base, 'ARS')})`;
+  return `${primary}${suffix}`;
+}
 function formatCurrency(amount) {
   if (isPrivacyHidden()) return '$ ******';
-  return formatCurrencyRaw(amount);
+  return formatMoneyRaw(amount, 'ARS');
+}
+function formatCurrencyByCurrency(amount, currency = 'ARS') {
+  return formatMoney(amount, currency);
+}
+function normalizeRatePlan(plan) {
+  const p = plan || {};
+  const cuotas = parseInt(p.cuotas, 10);
+  const tasa = Number(p.tasa);
+  const moneda = normalizeCurrency(p.moneda || 'ARS');
+  return {
+    ...p,
+    cuotas: Number.isFinite(cuotas) && cuotas > 0 ? cuotas : 1,
+    tasa: Number.isFinite(tasa) && tasa >= 0 ? tasa : 0,
+    activa: p.activa !== false,
+    desde: p.desde || '2026-01-01',
+    hasta: p.hasta || null,
+    moneda,
+  };
+}
+function normalizeRatePlans(plans = []) {
+  return (Array.isArray(plans) ? plans : []).map(normalizeRatePlan);
+}
+
+const DEFAULT_PAYMENT_METHODS = [
+  { id:'efectivo',      nombre:'Efectivo',      activo:true,  predeterminado:true,  impactaCaja:true,  requiereReferencia:false },
+  { id:'transferencia', nombre:'Transferencia',  activo:true,  predeterminado:false, impactaCaja:true,  requiereReferencia:true  },
+  { id:'mercado-pago',  nombre:'Mercado Pago',   activo:true,  predeterminado:false, impactaCaja:true,  requiereReferencia:true  },
+  { id:'cheque',        nombre:'Cheque',          activo:true,  predeterminado:false, impactaCaja:false, requiereReferencia:true  },
+  { id:'otro',          nombre:'Otro',            activo:true,  predeterminado:false, impactaCaja:false, requiereReferencia:false },
+];
+function normalizePaymentMethods(arr) {
+  if (!arr || arr.length === 0) return DEFAULT_PAYMENT_METHODS;
+  return arr.map((m, i) => {
+    if (typeof m === 'string') {
+      return { id: m.toLowerCase().replace(/\s+/g,'-'), nombre: m, activo: true, predeterminado: i === 0, impactaCaja: true, requiereReferencia: false };
+    }
+    return {
+      id:                 m.id || m.nombre.toLowerCase().replace(/\s+/g,'-'),
+      nombre:             m.nombre || 'Método',
+      activo:             m.activo !== false,
+      predeterminado:     !!m.predeterminado,
+      impactaCaja:        m.impactaCaja !== false,
+      requiereReferencia: !!m.requiereReferencia,
+    };
+  });
+}
+function isRatePlanActiveForDate(plan, dateStr) {
+  const p = normalizeRatePlan(plan);
+  if (!p.activa) return false;
+  const ref = dateStr || new Date().toISOString().slice(0, 10);
+  if (p.desde && p.desde > ref) return false;
+  if (p.hasta && p.hasta < ref) return false;
+  return true;
+}
+function getRatesByCurrency(settings, currency = 'ARS') {
+  const curr = normalizeCurrency(currency);
+  return normalizeRatePlans(settings?.tasasPorCuotas || [])
+    .filter(plan => normalizeCurrency(plan.moneda || 'ARS') === curr)
+    .sort((a, b) => a.cuotas - b.cuotas);
+}
+function findActiveRate(settings, currency = 'ARS', cuotas, dateStr) {
+  const curr = normalizeCurrency(currency);
+  const count = Number(cuotas);
+  const plans = normalizeRatePlans(settings?.tasasPorCuotas || []);
+  return plans.find(plan =>
+    normalizeCurrency(plan.moneda || 'ARS') === curr &&
+    Number(plan.cuotas) === count &&
+    isRatePlanActiveForDate(plan, dateStr)
+  ) || null;
+}
+function moneyBase(row, valueKey) {
+  const baseKey = `${valueKey}Base`;
+  if (row && row[baseKey] != null) return Number(row[baseKey] || 0);
+  return toBaseAmount(row?.[valueKey] || 0, row?.moneda || 'ARS', row?.tipoCambio || 1);
+}
+function splitMoneyByCurrency(rows, valueKey = 'monto') {
+  return (rows || []).reduce((acc, row) => {
+    const curr = normalizeCurrency(row?.moneda);
+    acc[curr] = (acc[curr] || 0) + Number(row?.[valueKey] || 0);
+    acc.base += moneyBase(row, valueKey);
+    return acc;
+  }, { ARS: 0, USD: 0, base: 0 });
+}
+async function fetchUsdRates() {
+  const cacheKey = 'crm-usd-rates-cache';
+  const normalizeRates = (items = []) => {
+    const wanted = { oficial: 'Oficial', blue: 'Blue', bolsa: 'MEP' };
+    return items
+      .filter(item => wanted[item.casa] && Number(item.venta) > 0)
+      .map(item => ({
+        key: item.casa,
+        label: wanted[item.casa],
+        rate: Number(item.venta),
+        updatedAt: item.fechaActualizacion || new Date().toISOString(),
+      }));
+  };
+  try {
+    const res = await fetch('https://dolarapi.com/v1/dolares', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`DolarApi ${res.status}`);
+    const rates = normalizeRates(await res.json());
+    if (rates.length) {
+      localStorage.setItem(cacheKey, JSON.stringify({ rates, savedAt: new Date().toISOString() }));
+      return rates;
+    }
+  } catch (err) {
+    console.warn('No se pudo obtener cotizacion USD, usando cache/local.', err);
+  }
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    if (Array.isArray(cached.rates) && cached.rates.length) return cached.rates;
+  } catch (err) {}
+  return [
+    { key: 'oficial', label: 'Oficial', rate: 1, updatedAt: null },
+    { key: 'blue', label: 'Blue', rate: 1, updatedAt: null },
+    { key: 'bolsa', label: 'MEP', rate: 1, updatedAt: null },
+  ];
 }
 function formatDate(dateStr) {
   if (!dateStr) return '—';
@@ -250,6 +491,99 @@ function calculateOverdueDays(fechaVencimiento) {
   const diff = Math.floor((today - due) / (1000 * 60 * 60 * 24));
   return diff > 0 ? diff : 0;
 }
+const DEFAULT_MORA_SETTINGS = {
+  activa: true,
+  modo: 'automatica_confirmacion',
+  tasaDiaria: 1,
+  diasGracia: 3,
+  baseCalculo: 'saldo_pendiente',
+  tipoCalculo: 'simple',
+  topePorcentaje: null,
+  redondeo: 'sin_redondeo',
+  prioridadPago: 'mora_primero',
+  aplicarAlAbrirMora: true,
+  aplicarAlRegistrarPago: true,
+};
+function normalizeMoraSettings(settings) {
+  const pf = settings?.parametrosFinancieros || settings || {};
+  const raw = pf.mora || {};
+  const tasa = Number(raw.tasaDiaria);
+  const gracia = parseInt(raw.diasGracia, 10);
+  const tope = raw.topePorcentaje === '' || raw.topePorcentaje == null ? null : Number(raw.topePorcentaje);
+  return {
+    ...DEFAULT_MORA_SETTINGS,
+    ...raw,
+    activa: raw.activa !== false,
+    modo: ['manual','automatica','automatica_confirmacion'].includes(raw.modo) ? raw.modo : DEFAULT_MORA_SETTINGS.modo,
+    tasaDiaria: Number.isFinite(tasa) && tasa >= 0 ? tasa : DEFAULT_MORA_SETTINGS.tasaDiaria,
+    diasGracia: Number.isFinite(gracia) && gracia >= 0 ? gracia : DEFAULT_MORA_SETTINGS.diasGracia,
+    baseCalculo: ['saldo_pendiente','monto_programado'].includes(raw.baseCalculo) ? raw.baseCalculo : DEFAULT_MORA_SETTINGS.baseCalculo,
+    tipoCalculo: ['simple','compuesto'].includes(raw.tipoCalculo) ? raw.tipoCalculo : DEFAULT_MORA_SETTINGS.tipoCalculo,
+    topePorcentaje: Number.isFinite(tope) && tope >= 0 ? tope : null,
+    redondeo: ['sin_redondeo','100','500','1000'].includes(raw.redondeo) ? raw.redondeo : DEFAULT_MORA_SETTINGS.redondeo,
+    prioridadPago: ['mora_primero','cuota_primero','manual'].includes(raw.prioridadPago) ? raw.prioridadPago : DEFAULT_MORA_SETTINGS.prioridadPago,
+    aplicarAlAbrirMora: raw.aplicarAlAbrirMora !== false,
+    aplicarAlRegistrarPago: raw.aplicarAlRegistrarPago !== false,
+  };
+}
+function roundMoraAmount(amount, redondeo = 'sin_redondeo') {
+  const n = Number(amount || 0);
+  const step = { '100': 100, '500': 500, '1000': 1000 }[redondeo] || 0;
+  return step > 0 ? Math.ceil(n / step) * step : Math.round(n * 100) / 100;
+}
+function moraDateOnly(date) {
+  const d = date ? new Date(date) : new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function diffDays(a, b) {
+  const da = moraDateOnly(a);
+  const db = moraDateOnly(b);
+  return Math.floor((da - db) / 86400000);
+}
+function getInstallmentMoraBalance(inst) {
+  const aplicada = Number(inst?.moraAplicada || 0);
+  const pagada = Number(inst?.moraPagada || 0);
+  const condonada = Number(inst?.moraCondonada || 0);
+  const pendiente = Math.max(0, aplicada - pagada - condonada);
+  return { aplicada, pagada, condonada, pendiente };
+}
+function calculateInstallmentMora(inst, settings, today = new Date()) {
+  const cfg = normalizeMoraSettings(settings);
+  const due = moraDateOnly(inst?.fechaVencimiento);
+  const ref = moraDateOnly(today);
+  const saldo = Number(inst?.saldoPendiente || 0);
+  const stored = inst?.estado;
+  if (!cfg.activa || !inst || stored === 'Pagada' || stored === 'Anulada' || stored === 'Refinanciada' || saldo <= 0 || inst.moraCongelada || ref <= due) {
+    return { amount: 0, days: 0, base: 0, totalDays: 0, inGrace: false, settings: cfg };
+  }
+  const totalDays = Math.max(0, diffDays(ref, due) - cfg.diasGracia);
+  const inGrace = totalDays <= 0;
+  if (inGrace) return { amount: 0, days: 0, base: 0, totalDays: 0, inGrace: true, settings: cfg };
+  const graceStart = new Date(due); graceStart.setDate(graceStart.getDate() + cfg.diasGracia);
+  const last = inst.moraActualizadaHasta ? moraDateOnly(inst.moraActualizadaHasta) : graceStart;
+  const start = last > graceStart ? last : graceStart;
+  const days = Math.max(0, diffDays(ref, start));
+  const base = cfg.baseCalculo === 'monto_programado' ? Number(inst.montoProgramado || 0) : saldo;
+  if (days <= 0 || base <= 0) return { amount: 0, days: 0, base, totalDays, inGrace: false, settings: cfg };
+  const rate = cfg.tasaDiaria / 100;
+  let amount = cfg.tipoCalculo === 'compuesto'
+    ? base * (Math.pow(1 + rate, days) - 1)
+    : base * rate * days;
+  if (cfg.topePorcentaje != null) {
+    const cap = base * cfg.topePorcentaje / 100;
+    amount = Math.min(amount, Math.max(0, cap - Number(inst.moraAplicada || 0)));
+  }
+  amount = roundMoraAmount(amount, cfg.redondeo);
+  return { amount, days, base, totalDays, inGrace: false, settings: cfg };
+}
+function calculatePendingMoraUpdate(inst, settings, today = new Date()) {
+  return calculateInstallmentMora(inst, settings, today);
+}
+function calculateTotalCollectable(inst) {
+  const bal = getInstallmentMoraBalance(inst);
+  return Number(inst?.saldoPendiente || 0) + bal.pendiente;
+}
 function calculateOperationTotals(costoReal, montoPactado, entrega, cuotas, tasa) {
   const montoFinanciado = montoPactado - entrega;
   const interes = montoFinanciado * (tasa / 100);
@@ -265,13 +599,22 @@ function calculateClientBalance(clientId, insts, pays, ops) {
   const cp = pays.filter(p => p.clientId === clientId);
   const today = new Date();
   const vencidas = ci.filter(i => new Date(i.fechaVencimiento) < today && i.saldoPendiente > 0);
+  const moraAplicada = ci.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).aplicada, i.moneda, i.tipoCambio), 0);
+  const moraPendiente = ci.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).pendiente, i.moneda, i.tipoCambio), 0);
+  const moraPagada = ci.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).pagada, i.moneda, i.tipoCambio), 0);
+  const moraCondonada = ci.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).condonada, i.moneda, i.tipoCambio), 0);
   return {
-    totalPactado: co.reduce((s, o) => s + o.totalEsperado, 0),
-    saldoPendiente: ci.reduce((s, i) => s + i.saldoPendiente, 0),
-    totalPagado: cp.reduce((s, p) => s + p.monto, 0),
-    montoVencido: vencidas.reduce((s, i) => s + i.saldoPendiente, 0),
-    capitalInvertido: co.reduce((s, o) => s + o.costoReal, 0),
-    gananciaEsperada: co.reduce((s, o) => s + o.gananciaEsperada, 0),
+    totalPactado: co.reduce((s, o) => s + moneyBase(o, 'totalEsperado'), 0),
+    saldoPendiente: ci.reduce((s, i) => s + moneyBase(i, 'saldoPendiente'), 0),
+    totalCobrableActual: ci.reduce((s, i) => s + moneyBase(i, 'saldoPendiente') + toBaseAmount(getInstallmentMoraBalance(i).pendiente, i.moneda, i.tipoCambio), 0),
+    totalPagado: cp.reduce((s, p) => s + moneyBase(p, 'monto'), 0),
+    montoVencido: vencidas.reduce((s, i) => s + moneyBase(i, 'saldoPendiente'), 0),
+    moraAplicada,
+    moraPendiente,
+    moraPagada,
+    moraCondonada,
+    capitalInvertido: co.reduce((s, o) => s + moneyBase(o, 'costoReal'), 0),
+    gananciaEsperada: co.reduce((s, o) => s + moneyBase(o, 'gananciaEsperada'), 0),
     opActivas: co.filter(o => o.estado === 'Activa').length,
     nextInst: ci.filter(i => i.saldoPendiente > 0).sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento))[0],
     lastPay: cp.sort((a, b) => b.fechaPago.localeCompare(a.fechaPago))[0],
@@ -281,22 +624,28 @@ function getDashboardMetrics(cls, ops, insts, pays, cards, ccMovs) {
   const today = new Date();
   const thisMonth = today.toISOString().slice(0, 7);
   const vencidas = insts.filter(i => new Date(i.fechaVencimiento) < today && i.saldoPendiente > 0);
+  const moraPendiente = insts.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).pendiente, i.moneda, i.tipoCambio), 0);
+  const moraCobradaTotal = insts.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).pagada, i.moneda, i.tipoCambio), 0);
   const next15 = new Date(); next15.setDate(next15.getDate() + 15);
   const proxVencimientos = insts.filter(i => {
     const d = new Date(i.fechaVencimiento);
     return d >= today && d <= next15 && i.saldoPendiente > 0;
   }).sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento));
   return {
-    capitalInvertido: ops.reduce((s, o) => s + o.costoReal, 0),
-    totalEsperado: ops.reduce((s, o) => s + o.totalEsperado, 0),
-    saldoPendiente: insts.reduce((s, i) => s + i.saldoPendiente, 0),
-    montoVencido: vencidas.reduce((s, i) => s + i.saldoPendiente, 0),
+    capitalInvertido: ops.reduce((s, o) => s + moneyBase(o, 'costoReal'), 0),
+    totalEsperado: ops.reduce((s, o) => s + moneyBase(o, 'totalEsperado'), 0),
+    saldoPendiente: insts.reduce((s, i) => s + moneyBase(i, 'saldoPendiente'), 0),
+    montoVencido: vencidas.reduce((s, i) => s + moneyBase(i, 'saldoPendiente'), 0),
+    moraPendiente,
+    moraCobradaTotal,
     clientesEnMora: new Set(vencidas.map(i => i.clientId)).size,
-    cobradoEsteMes: pays.filter(p => p.fechaPago.startsWith(thisMonth)).reduce((s, p) => s + p.monto, 0),
-    gananciaEsperada: ops.reduce((s, o) => s + o.gananciaEsperada, 0),
-    gananciaRealizada: pays.reduce((s, p) => s + p.monto, 0) - ops.reduce((s, o) => s + o.costoReal, 0),
-    capitalEfectivo: ops.filter(o => o.fuenteFinanciacion !== 'Tarjeta de crédito').reduce((s, o) => s + o.costoReal, 0),
-    capitalTarjeta: ops.filter(o => o.fuenteFinanciacion === 'Tarjeta de crédito').reduce((s, o) => s + o.costoReal, 0),
+    cobradoEsteMes: pays.filter(p => p.fechaPago.startsWith(thisMonth)).reduce((s, p) => s + moneyBase(p, 'monto'), 0),
+    gananciaEsperada: ops.reduce((s, o) => s + moneyBase(o, 'gananciaEsperada'), 0),
+    gananciaRealizada: pays.reduce((s, p) => s + moneyBase(p, 'monto'), 0) - ops.reduce((s, o) => s + moneyBase(o, 'costoReal'), 0),
+    capitalEfectivo: ops.filter(o => !String(o.fuenteFinanciacion || '').toLowerCase().includes('tarjeta')).reduce((s, o) => s + moneyBase(o, 'costoReal'), 0),
+    capitalTarjeta: ops.filter(o => String(o.fuenteFinanciacion || '').toLowerCase().includes('tarjeta')).reduce((s, o) => s + moneyBase(o, 'costoReal'), 0),
+    saldoPendientePorMoneda: splitMoneyByCurrency(insts, 'saldoPendiente'),
+    cobradoPorMoneda: splitMoneyByCurrency(pays, 'monto'),
     proxVencimientos,
     vencidas,
   };
@@ -309,6 +658,11 @@ function getDashboardMetrics(cls, ops, insts, pays, cards, ccMovs) {
 <script type="text/babel" src="components/StatusBadge.jsx"></script>
 <script type="text/babel" src="components/UI.jsx"></script>
 <script type="text/babel" src="components/Layout.jsx"></script>
+<!-- Auth screens (cargar antes de App) -->
+<script type="text/babel" src="screens/LoginScreen.jsx"></script>
+<script type="text/babel" src="screens/UnauthorizedScreen.jsx"></script>
+<script type="text/babel" src="screens/OrganizationSelector.jsx"></script>
+<!-- App screens -->
 <script type="text/babel" src="screens/Dashboard.jsx"></script>
 <script type="text/babel" src="screens/Clientes.jsx"></script>
 <script type="text/babel" src="screens/Operaciones.jsx"></script>
@@ -318,45 +672,378 @@ function getDashboardMetrics(cls, ops, insts, pays, cards, ccMovs) {
 <script type="text/babel" src="screens/Reportes.jsx"></script>
 <script type="text/babel" src="screens/Configuracion.jsx"></script>
 <script type="text/babel" src="screens/ImportarDatos.jsx"></script>
+<script type="text/babel" src="screens/UsersPermissions.jsx"></script>
 
 <!-- Main App -->
 <script type="text/babel">
+
+// ─── AUDIT LOG helper ─────────────────────────────────────────────────────────
+async function logAudit(orgId, userId, action, entityType, entityId, metadata = {}) {
+  try {
+    await sb.from('audit_log').insert({
+      organization_id: orgId,
+      actor_user_id: userId,
+      action,
+      entity_type: entityType || null,
+      entity_id: entityId || null,
+      metadata,
+    });
+  } catch (_) {}
+}
+
+// ─── ESTADO EFECTIVO DE CUOTA (centralizado) ──────────────────────────────────
+// Calcula el estado real dinámico de una cuota ignorando el valor almacenado en BD
+// (que puede estar desactualizado si no se re-guardó tras cambiar la fecha).
+function effectiveInstallmentState(inst, today) {
+  const stored = inst?.estado;
+  if (stored === 'Anulada' || stored === 'Refinanciada') return stored;
+  const saldo  = Number(inst?.saldoPendiente) || 0;
+  const pagado = Number(inst?.montoPagado)    || 0;
+  const moraPendiente = getInstallmentMoraBalance(inst).pendiente;
+  if (saldo <= 0 && moraPendiente <= 0) return 'Pagada';
+  const due = inst?.fechaVencimiento ? new Date(inst.fechaVencimiento + 'T00:00:00') : null;
+  if (due && due < (today || new Date())) return 'Vencida';
+  if (pagado > 0) return 'Parcial';
+  return 'Pendiente';
+}
+function isFinanciallyActiveInstallment(inst) {
+  return inst?.estado !== 'Anulada' && inst?.estado !== 'Refinanciada';
+}
+
+// ─── IMPUTACIÓN DE PAGO A CUOTA (centralizado, testeable) ────────────────────
+// Calcula cuánto de un pago se aplica a una cuota, manejando multi-moneda.
+// paymentCurrency / paymentRate: datos del pago que se está registrando.
+function buildPaymentAllocation(inst, remainingInPaymentCurrency, divisor, paymentCurrency, paymentRate, priority = 'cuota_primero', manualSplit = null) {
+  const instCurrency = normalizeCurrency(inst.moneda);
+  const instRate     = normalizeExchangeRate(inst.tipoCambio);
+  const maxPayChunk  = remainingInPaymentCurrency / Math.max(1, divisor || 1);
+  const availableInInstallmentCurrency = convertMoney(maxPayChunk, paymentCurrency, instCurrency, paymentRate);
+  const moraPendiente = getInstallmentMoraBalance(inst).pendiente;
+  let montoCuotaAplicado = 0;
+  let montoMoraAplicado = 0;
+  if (manualSplit) {
+    montoMoraAplicado = Math.min(Number(manualSplit.mora || 0), moraPendiente, availableInInstallmentCurrency);
+    montoCuotaAplicado = Math.min(Number(manualSplit.cuota || 0), Number(inst.saldoPendiente || 0), Math.max(0, availableInInstallmentCurrency - montoMoraAplicado));
+  } else if (priority === 'mora_primero') {
+    montoMoraAplicado = Math.min(availableInInstallmentCurrency, moraPendiente);
+    montoCuotaAplicado = Math.min(Math.max(0, availableInInstallmentCurrency - montoMoraAplicado), Number(inst.saldoPendiente || 0));
+  } else {
+    montoCuotaAplicado = Math.min(availableInInstallmentCurrency, Number(inst.saldoPendiente || 0));
+    montoMoraAplicado = Math.min(Math.max(0, availableInInstallmentCurrency - montoCuotaAplicado), moraPendiente);
+  }
+  const montoAplicado      = montoCuotaAplicado + montoMoraAplicado;
+  const montoPagoAplicado  = convertMoney(montoAplicado, instCurrency, paymentCurrency, paymentRate);
+  return {
+    installmentId:          inst.id,
+    montoAplicado,
+    montoCuotaAplicado,
+    montoMoraAplicado,
+    montoPagoAplicado,
+    montoAplicadoBase:      toBaseAmount(montoPagoAplicado, paymentCurrency, paymentRate),
+    montoCuotaAplicadoBase: toBaseAmount(montoCuotaAplicado, instCurrency, instRate),
+    montoMoraAplicadoBase:  toBaseAmount(montoMoraAplicado, instCurrency, instRate),
+    paymentMoneda:          paymentCurrency,
+    installmentMoneda:      instCurrency,
+    tipoCambioPago:         paymentRate,
+    tipoCambioInstallment:  instRate,
+    inst,
+  };
+}
+
+// ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
+// Compatibilidad gradual: core/finance.js es la API financiera estable.
+if (window.CRMFinance) {
+  Object.assign(window, window.CRMFinance);
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[Brian CRM] Error no capturado:', error, info?.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          height: '100vh', background: '#f8fafc', gap: 16, padding: 32, textAlign: 'center',
+          fontFamily: 'DM Sans, sans-serif',
+        }}>
+          <div style={{ fontSize: 48 }}>⚠️</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>Ocurrió un error inesperado</div>
+          <div style={{ fontSize: 14, color: '#64748b', maxWidth: 420, lineHeight: 1.6 }}>
+            {this.state.error?.message || 'Error desconocido. Revisá la consola del navegador para más detalles.'}
+          </div>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null }); }}
+            style={{
+              padding: '10px 24px', background: '#4f46e5', color: '#fff',
+              border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Intentar de nuevo
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '8px 20px', background: 'transparent', color: '#64748b',
+              border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            Recargar aplicación
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   const [appData, setAppData] = React.useState(null);
   const [loadError, setLoadError] = React.useState(null);
   const [nav, setNav] = React.useState({ screen: 'dashboard', id: null, modal: null, extra: null });
+  const [navHistory, setNavHistory] = React.useState([]);
   const [privacyHidden, setPrivacyHidden] = React.useState(() => {
     try {
       const saved = localStorage.getItem('crm-privacy-hidden');
       return saved == null ? true : saved === 'true';
-    } catch {
-      return true;
-    }
+    } catch { return true; }
+  });
+
+  // ── Estado de autenticación ──────────────────────────────────────────────
+  const [authState, setAuthState] = React.useState({
+    loading: true,
+    session: null,
+    user: null,
+    profile: null,
+    organizations: [],
+    currentOrganization: null,
+    membership: null,
+    permissions: [],
   });
 
   window.CRM_PRIVACY_HIDE_NUMBERS = privacyHidden;
 
+  // ── Exponer hasPermission globalmente para todas las screens ──────────────
+  window.hasPermission = function(permKey) {
+    const role = authState.membership?.role;
+    if (['owner', 'admin', 'administrador'].includes(role)) return true;
+    return authState.permissions.includes(permKey);
+  };
+  window.currentOrg = authState.currentOrganization;
+  window.currentUser = authState.user;
+
+  // ── Cargar permisos efectivos del usuario ─────────────────────────────────
+  async function loadPermissions(orgId, userId, role) {
+    if (['owner', 'admin', 'administrador'].includes(role)) {
+      // Cargar todos los permisos disponibles
+      const { data } = await sb.from('permissions').select('key');
+      return (data || []).map(p => p.key);
+    }
+    // Permisos base del rol (globales + org-específicos)
+    const { data: rolePerm } = await sb.from('role_permissions')
+      .select('permission_key')
+      .eq('role', role)
+      .or(`organization_id.eq.${orgId},organization_id.is.null`);
+
+    // Overrides individuales
+    const { data: overrides } = await sb.from('user_permission_overrides')
+      .select('permission_key, allowed')
+      .eq('organization_id', orgId)
+      .eq('user_id', userId);
+
+    const base = new Set((rolePerm || []).map(r => r.permission_key));
+    for (const ov of (overrides || [])) {
+      if (ov.allowed) base.add(ov.permission_key);
+      else base.delete(ov.permission_key);
+    }
+    return [...base];
+  }
+
+  // ── Cargar estado de auth completo ────────────────────────────────────────
+  // forcePicker = true en login fresco → siempre muestra el selector si hay múltiples orgs.
+  // forcePicker = false (default) en recarga de página → restaura la última org desde localStorage.
+  async function loadAuthState(forcePicker = false) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        setAuthState({ loading: false, session: null, user: null, profile: null, organizations: [], currentOrganization: null, membership: null, permissions: [] });
+        return;
+      }
+      const user = session.user;
+
+      // Cargar perfil (puede no existir aún)
+      const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+
+      // Cargar membresías activas con datos de la org
+      const { data: memberships } = await sb.from('organization_members')
+        .select('*, organizations(*)')
+        .eq('user_id', user.id)
+        .eq('status', 'active');
+
+      const orgs = (memberships || []).map(m => m.organizations).filter(Boolean);
+
+      // Seleccionar organización automáticamente o mostrar selector
+      const savedOrgId = localStorage.getItem('crm-current-org');
+      let currentOrg;
+      if (orgs.length === 1) {
+        // Una sola org: siempre auto-seleccionar
+        currentOrg = orgs[0];
+      } else if (!forcePicker && savedOrgId) {
+        // Múltiples orgs + recarga de página con sesión activa: restaurar la última
+        currentOrg = orgs.find(o => o.id === savedOrgId) || null;
+      } else {
+        // Múltiples orgs + login fresco: forzar el selector
+        currentOrg = null;
+      }
+      const membership = currentOrg
+        ? (memberships || []).find(m => m.organization_id === currentOrg.id)
+        : null;
+
+      let permissions = [];
+      if (currentOrg && membership) {
+        permissions = await loadPermissions(currentOrg.id, user.id, membership.role);
+      }
+
+      setAuthState({ loading: false, session, user, profile: profile || null, organizations: orgs, currentOrganization: currentOrg, membership, permissions });
+
+      // Actualizar last_seen_at
+      if (membership) {
+        sb.from('organization_members').update({ last_seen_at: new Date().toISOString() }).eq('id', membership.id).then(() => {});
+      }
+    } catch (err) {
+      console.error('loadAuthState error:', err);
+      setAuthState({ loading: false, session: null, user: null, profile: null, organizations: [], currentOrganization: null, membership: null, permissions: [] });
+    }
+  }
+
+  // ── Seleccionar organización ──────────────────────────────────────────────
+  async function selectOrganization(org) {
+    localStorage.setItem('crm-current-org', org.id);
+    const { data: memberships } = await sb.from('organization_members')
+      .select('*, organizations(*)')
+      .eq('user_id', authState.user.id)
+      .eq('status', 'active');
+    const membership = (memberships || []).find(m => m.organization_id === org.id);
+    const permissions = membership ? await loadPermissions(org.id, authState.user.id, membership.role) : [];
+    setAuthState(prev => ({ ...prev, currentOrganization: org, membership, permissions }));
+    // Cargar datos de la org seleccionada
+    try {
+      const data = await loadAllData(org.id);
+      setAppData(data);
+    } catch (err) {
+      setLoadError(err.message);
+    }
+  }
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  async function handleLogin() {
+    // forcePicker = true: si hay múltiples orgs, siempre mostrar el selector tras un login fresco
+    await loadAuthState(true);
+  }
+
+  // ── Cambiar organización ─────────────────────────────────────────────────
+  function handleShowOrgPicker() {
+    localStorage.removeItem('crm-current-org');
+    setAppData(null);
+    setAuthState(prev => ({ ...prev, currentOrganization: null, membership: null, permissions: [] }));
+  }
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+  async function handleLogout() {
+    if (authState.currentOrganization && authState.user) {
+      logAudit(authState.currentOrganization.id, authState.user.id, 'user_logout', 'users', authState.user.id);
+    }
+    await sb.auth.signOut();
+    localStorage.removeItem('crm-current-org');
+    setAuthState({ loading: false, session: null, user: null, profile: null, organizations: [], currentOrganization: null, membership: null, permissions: [] });
+    setAppData(null);
+    setLoadError(null);
+  }
+
+  // ── Effect inicial: verificar sesión + listener de auth ───────────────────
   React.useEffect(() => {
-    loadAllData()
-      .then(data => setAppData(data))
-      .catch(err  => setLoadError(err.message));
+    loadAuthState();
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthState({ loading: false, session: null, user: null, profile: null, organizations: [], currentOrganization: null, membership: null, permissions: [] });
+        setAppData(null);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
+  // ── Cargar datos cuando se establece currentOrganization ─────────────────
+  React.useEffect(() => {
+    if (!authState.currentOrganization) return;
+    loadAllData(authState.currentOrganization.id)
+      .then(data => {
+        setAppData(data);
+        if (authState.user) {
+          logAudit(authState.currentOrganization.id, authState.user.id, 'user_login', 'users', authState.user.id);
+        }
+      })
+      .catch(err => setLoadError(err.message));
+  }, [authState.currentOrganization?.id]);
+
+  // ── Privacy ───────────────────────────────────────────────────────────────
   React.useEffect(() => {
     window.CRM_PRIVACY_HIDE_NUMBERS = privacyHidden;
     try { localStorage.setItem('crm-privacy-hidden', String(privacyHidden)); } catch {}
   }, [privacyHidden]);
 
+  // ── Tema (dark/light mode) ────────────────────────────────────────────────
+  React.useEffect(() => {
+    const tema = appData?.settings?.uiPreferences?.tema || 'claro';
+    document.documentElement.dataset.theme = tema;
+  }, [appData?.settings?.uiPreferences?.tema]);
+
+  // ── AuthGate ──────────────────────────────────────────────────────────────
+  if (authState.loading) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:12, fontFamily:'DM Sans, sans-serif', background:'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
+        <div style={{ width:40, height:40, border:'3px solid rgba(255,255,255,0.1)', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+        <div style={{ fontSize:13, color:'#475569', fontWeight:500 }}>Verificando sesión…</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!authState.session) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  if (!authState.currentOrganization && authState.organizations.length > 1) {
+    return (
+      <OrganizationSelector
+        organizations={authState.organizations}
+        onSelect={selectOrganization}
+        onLogout={handleLogout}
+        userName={authState.profile?.full_name || authState.user?.email}
+      />
+    );
+  }
+
+  if (!authState.currentOrganization) {
+    return <UnauthorizedScreen onLogout={handleLogout} userEmail={authState.user?.email} />;
+  }
+
+  // ── App cargando datos ────────────────────────────────────────────────────
   if (loadError) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
-                    height:'100vh', flexDirection:'column', gap:16, fontFamily:'DM Sans, sans-serif' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:16, fontFamily:'DM Sans, sans-serif' }}>
         <div style={{ fontSize:32 }}>⚠️</div>
-        <div style={{ fontSize:16, fontWeight:700, color:'#dc2626' }}>Error al conectar con Supabase</div>
+        <div style={{ fontSize:16, fontWeight:700, color:'#dc2626' }}>Error al cargar datos</div>
         <div style={{ fontSize:13, color:'#64748b', maxWidth:400, textAlign:'center' }}>{loadError}</div>
-        <button onClick={() => { setLoadError(null); loadAllData().then(setAppData).catch(e => setLoadError(e.message)); }}
-          style={{ padding:'8px 20px', background:'#4f46e5', color:'#fff', border:'none',
-                   borderRadius:8, cursor:'pointer', fontWeight:600, fontSize:14 }}>
+        <button onClick={() => { setLoadError(null); loadAllData(authState.currentOrganization.id).then(setAppData).catch(e => setLoadError(e.message)); }}
+          style={{ padding:'8px 20px', background:'#4f46e5', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontWeight:600, fontSize:14 }}>
           Reintentar
         </button>
       </div>
@@ -365,21 +1052,31 @@ function App() {
 
   if (!appData) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
-                    height:'100vh', flexDirection:'column', gap:12, fontFamily:'DM Sans, sans-serif' }}>
-        <div style={{ width:40, height:40, border:'3px solid #e2e8f0',
-                      borderTop:'3px solid #4f46e5', borderRadius:'50%',
-                      animation:'spin 0.8s linear infinite' }}/>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', flexDirection:'column', gap:12, fontFamily:'DM Sans, sans-serif' }}>
+        <div style={{ width:40, height:40, border:'3px solid #e2e8f0', borderTop:'3px solid #4f46e5', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
         <div style={{ fontSize:14, color:'#64748b', fontWeight:500 }}>Cargando datos…</div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
+  // ── App principal ─────────────────────────────────────────────────────────
   function onNav(screen, id = null, modal = null, extra = null, extra2 = null) {
+    setNavHistory(h => [...h, nav]);
     setNav({ screen, id, modal, extra, extra2 });
     const main = document.querySelector('main');
     if (main) main.scrollTop = 0;
+  }
+
+  function onGoBack() {
+    setNavHistory(h => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setNav(prev);
+      const main = document.querySelector('main');
+      if (main) main.scrollTop = 0;
+      return h.slice(0, -1);
+    });
   }
 
   function onDataChange(key, value) {
@@ -395,34 +1092,35 @@ function App() {
 
   function renderScreen() {
     const { screen, id, modal, extra, extra2 } = nav;
+    const authCtx = { currentOrganization: authState.currentOrganization, user: authState.user, membership: authState.membership };
     switch (screen) {
       case 'dashboard':
         return <DashboardScreen data={appData} onNav={onNav} />;
       case 'clientes':
-        if (id) return <ClienteDetalleScreen clientId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
-        return <ClientesScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        if (id) return <ClienteDetalleScreen clientId={id} data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
+        return <ClientesScreen data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
       case 'operaciones':
-        if (id) return <OperacionDetalleScreen operationId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
-        return <OperacionesScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} />;
+        if (id) return <OperacionDetalleScreen operationId={id} data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
+        return <OperacionesScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} auth={authCtx} />;
       case 'cuotas':
-        return <CuotasScreen data={appData} onNav={onNav} />;
+        return <CuotasScreen data={appData} onNav={onNav} auth={authCtx} />;
       case 'pagos':
-        return <PagosScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} />;
+        return <PagosScreen data={appData} onNav={onNav} onDataChange={onDataChange} openNewModal={modal === 'nuevo'} preselectedClientId={extra} auth={authCtx} />;
       case 'recibos':
-        return <RecibosScreen data={appData} onNav={onNav} onDataChange={onDataChange} receiptsFilter={id} />;
+        return <RecibosScreen data={appData} onNav={onNav} onDataChange={onDataChange} receiptsFilter={id} auth={authCtx} />;
       case 'tarjetas':
-        if (id) return <TarjetaDetalleScreen cardId={id} data={appData} onNav={onNav} onDataChange={onDataChange} />;
-        return <TarjetasScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        if (id) return <TarjetaDetalleScreen cardId={id} data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
+        return <TarjetasScreen data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
       case 'caja':
-        return <CajaScreen data={appData} onNav={onNav} onDataChange={onDataChange} />;
+        return <CajaScreen data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
       case 'mora':
-        return <MoraScreen data={appData} onNav={onNav} />;
+        return <MoraScreen data={appData} onNav={onNav} onDataChange={onDataChange} auth={authCtx} />;
       case 'reportes':
-        return <ReportesScreen data={appData} />;
+        return <ReportesScreen data={appData} onNav={onNav} />;
       case 'configuracion':
-        return <ConfiguracionScreen data={appData} onDataChange={onDataChange} />;
+        return <ConfiguracionScreen data={appData} onDataChange={onDataChange} auth={authCtx} />;
       case 'importar':
-        return <ImportarDatosScreen onDataChange={onDataChange} />;
+        return <ImportarDatosScreen onDataChange={onDataChange} auth={authCtx} />;
       case 'comprobantes':
         if (id) {
           const voucher = appData.internalOperationVouchers.find(v => v.id === id);
@@ -434,7 +1132,7 @@ function App() {
                 <div style={{ marginBottom: 16 }}>
                   <Btn variant="ghost" size="sm" onClick={() => window.history.back ? onNav('operaciones', voucher.operationId) : onNav('operaciones')}>← Volver</Btn>
                 </div>
-                <InternalVoucherPreview op={op} client={client} voucher={voucher} installments={appData.installments} />
+                <InternalVoucherPreview op={op} client={client} voucher={voucher} installments={appData.installments} settings={appData.settings} />
               </div>
             );
           }
@@ -449,9 +1147,14 @@ function App() {
     <AppLayout
       current={nav.screen}
       onNav={onNav}
+      onGoBack={navHistory.length > 0 ? onGoBack : null}
       searchData={searchData}
       privacyHidden={privacyHidden}
       onTogglePrivacy={() => setPrivacyHidden(v => !v)}
+      authState={authState}
+      onLogout={handleLogout}
+      onSelectOrg={authState.organizations.length > 1 ? handleShowOrgPicker : undefined}
+      settings={appData.settings}
     >
       <div className="screen-enter" key={nav.screen + (nav.id || '')}>
         {renderScreen()}
@@ -461,7 +1164,7 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+root.render(<ErrorBoundary><App /></ErrorBoundary>);
 </script>
 </body>
 </html>

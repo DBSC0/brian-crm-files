@@ -1,5 +1,7 @@
 // Pantalla de importación de datos desde Excel
-function ImportarDatosScreen({ onDataChange }) {
+function ImportarDatosScreen({ onDataChange, auth }) {
+  const hp = window.hasPermission || (() => true);
+  const orgId = auth?.currentOrganization?.id;
   const [fileInfo, setFileInfo]       = React.useState(null);
   const [parsed, setParsed]           = React.useState(null);
   const [parseError, setParseError]   = React.useState(null);
@@ -313,6 +315,8 @@ function ImportarDatosScreen({ onDataChange }) {
 
   function handleImport() {
     if (!parsed || !confirmed) return;
+    if (!hp('import.run')) { alert('No tenés permiso para importar datos.'); return; }
+    if (!orgId) { alert('No hay organización activa. Iniciá sesión de nuevo.'); return; }
     setImporting(true);
     setImportError(null);
 
@@ -329,15 +333,15 @@ function ImportarDatosScreen({ onDataChange }) {
       pagos:       { insertados: [], omitidos: [], imputados: [], sinCuota: [], errores: [] },
     };
 
-    // 1. Pre-fetch existing codes
+    // 1. Pre-fetch existing codes (scoped to this org)
     setImportStep('Verificando duplicados...');
     Promise.all([
-      sb.from('clients').select('id, codigo'),
-      sb.from('operations').select('id, codigo'),
-      sb.from('installments').select('id, codigo, client_id, operation_id, monto_programado, fecha_vencimiento'),
-      sb.from('payments').select('id, codigo, receipt_id'),
+      sb.from('clients').select('id, codigo').eq('organization_id', orgId),
+      sb.from('operations').select('id, codigo').eq('organization_id', orgId),
+      sb.from('installments').select('id, codigo, client_id, operation_id, monto_programado, fecha_vencimiento').eq('organization_id', orgId),
+      sb.from('payments').select('id, codigo, receipt_id').eq('organization_id', orgId),
       sb.from('payment_allocations').select('id, payment_id, installment_id, monto_aplicado'),
-      sb.from('receipts').select('id, codigo, numero, payment_id'),
+      sb.from('receipts').select('id, codigo, numero, payment_id').eq('organization_id', orgId),
     ]).then(function(results) {
       var r1 = results[0], r2 = results[1], r3 = results[2], r4 = results[3], r5 = results[4], r6 = results[5];
       if (r1.error) throw new Error('Error consultando clientes: ' + r1.error.message);
@@ -392,6 +396,7 @@ function ImportarDatosScreen({ onDataChange }) {
         ? sb.from('clients').insert(newClientes.map(function(c) {
             var out = {};
             Object.keys(c).forEach(function(k) { if (k !== '_codigo') out[k] = c[k]; });
+            out.organization_id = orgId;
             return out;
           })).select('id, codigo')
         : Promise.resolve({ data: [], error: null });
@@ -424,7 +429,20 @@ function ImportarDatosScreen({ onDataChange }) {
               Object.keys(op).forEach(function(k) {
                 if (k !== '_clientCodigo') out[k] = op[k];
               });
+              out.organization_id = orgId;
               out.client_id = clientMap[op._clientCodigo];
+              out.moneda = 'ARS';
+              out.tipo_cambio = 1;
+              out.tipo_cambio_fuente = 'historico_ars';
+              out.costo_real_base = op.costo_real;
+              out.monto_pactado_base = op.monto_pactado;
+              out.entrega_base = op.entrega;
+              out.monto_financiado_base = op.monto_financiado;
+              out.interes_calculado_base = op.interes_calculado;
+              out.total_financiado_base = op.total_financiado;
+              out.valor_cuota_base = op.valor_cuota;
+              out.total_esperado_base = op.total_esperado;
+              out.ganancia_esperada_base = op.ganancia_esperada;
               return out;
             })).select('id, codigo')
           : Promise.resolve({ data: [], error: null });
@@ -456,8 +474,16 @@ function ImportarDatosScreen({ onDataChange }) {
             Object.keys(c).forEach(function(k) {
               if (k.charAt(0) !== '_') out[k] = c[k];
             });
+            out.organization_id = orgId;
             out.client_id    = cliId;
             out.operation_id = opId;
+            out.moneda = 'ARS';
+            out.tipo_cambio = 1;
+            out.tipo_cambio_fuente = 'historico_ars';
+            out.monto_programado_base = out.monto_programado;
+            out.monto_pagado_base = out.monto_pagado || 0;
+            out.saldo_pendiente_base = out.saldo_pendiente;
+            out.mora_aplicada_base = out.mora_aplicada || 0;
             newCuotas.push(out);
           });
 
@@ -504,10 +530,15 @@ function ImportarDatosScreen({ onDataChange }) {
               }
 
               newPayments.push({
+                organization_id: orgId,
                 codigo:       p.codigo,
                 client_id:    cuota.client_id,
                 fecha_pago:   p.fecha_pago || cuota.fecha_vencimiento || new Date().toISOString().slice(0, 10),
                 monto:        montoPago,
+                moneda:       'ARS',
+                tipo_cambio:  1,
+                tipo_cambio_fuente: 'historico_ars',
+                monto_base:   montoPago,
                 metodo_pago:  p.metodo_pago,
                 notas:        p.notas,
               });
@@ -552,12 +583,17 @@ function ImportarDatosScreen({ onDataChange }) {
 
               var receiptRows = insertedItems.map(function(item) {
                 return {
+                  organization_id: orgId,
                   codigo:     item.pago.recibo_codigo,
                   payment_id: item.paymentId,
                   client_id:  item.cuota.client_id,
                   numero:     nextReceiptNumber++,
                   estado:     'Emitido',
                   fecha:      item.fecha_pago,
+                  moneda:     'ARS',
+                  tipo_cambio: 1,
+                  tipo_cambio_fuente: 'historico_ars',
+                  monto_base: item.monto,
                 };
               });
 
@@ -575,15 +611,28 @@ function ImportarDatosScreen({ onDataChange }) {
 
                   var allocRows = insertedItems.map(function(item) {
                     return {
+                      organization_id: orgId,
                       payment_id:     item.paymentId,
                       installment_id: item.cuota.id,
                       monto_aplicado: item.monto,
+                      payment_moneda: 'ARS',
+                      installment_moneda: 'ARS',
+                      tipo_cambio_pago: 1,
+                      tipo_cambio_installment: 1,
+                      monto_pago_aplicado: item.monto,
+                      monto_aplicado_base: item.monto,
+                      monto_cuota_aplicado_base: item.monto,
                     };
                   });
                   var cashRows = insertedItems.map(function(item) {
                     return {
+                      organization_id: orgId,
                       tipo:          'Entrada por pago',
                       monto:         item.monto,
+                      moneda:        'ARS',
+                      tipo_cambio:   1,
+                      tipo_cambio_fuente: 'historico_ars',
+                      monto_base:    item.monto,
                       client_id:     item.cuota.client_id,
                       operation_id:  item.cuota.operation_id,
                       payment_id:    item.paymentId,
@@ -619,8 +668,8 @@ function ImportarDatosScreen({ onDataChange }) {
   // ─── Estilos ─────────────────────────────────────────────────────────────────
 
   var card = {
-    background: '#fff', borderRadius: 12,
-    border: '1px solid #f1f5f9',
+    background: 'var(--bg-surface)', borderRadius: 12,
+    border: '1px solid var(--border-subtle)',
     boxShadow: '0 1px 4px rgba(15,23,42,0.06)', padding: 24,
   };
 
@@ -635,12 +684,12 @@ function ImportarDatosScreen({ onDataChange }) {
 
   var TH = {
     padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700,
-    color: '#64748b', fontFamily: 'DM Mono, monospace',
+    color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
     textTransform: 'uppercase', letterSpacing: '0.05em',
-    borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap',
+    borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap',
   };
   var TD = {
-    padding: '8px 12px', fontSize: 13, color: '#0f172a',
+    padding: '8px 12px', fontSize: 13, color: 'var(--text-primary)',
     borderBottom: '1px solid #f8fafc', fontFamily: 'DM Sans, sans-serif',
   };
 
@@ -1147,7 +1196,7 @@ function ImportarDatosScreen({ onDataChange }) {
           </div>
 
           <div style={{marginTop:20, display:'flex', gap:12}}>
-            <Btn onClick={handleImport} disabled={!confirmed || importing}>
+            <Btn onClick={handleImport} disabled={!confirmed || importing || !hp('import.run')}>
               {importing ? (importStep || 'Importando...') : ('Importar ' + parsed.clientes.length + ' clientes')}
             </Btn>
             <Btn variant="ghost" onClick={function(){setParsed(null); setFileInfo(null); setConfirmed(false); setImportLog(null);}}>

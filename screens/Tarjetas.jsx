@@ -22,7 +22,7 @@ function computeBillingPeriods(card, movements) {
   const cardMovs = movements.filter(m => m.creditCardId === card.id && m.estado !== 'Cancelado');
 
   for (const mov of cardMovs) {
-    const cuotaMonto = mov.monto / mov.cuotasTarjeta;
+    const cuotaMonto = moneyBase(mov, 'monto') / mov.cuotasTarjeta;
     const compra = new Date(mov.fechaCompra + 'T00:00:00');
     let y = compra.getFullYear();
     let mo = compra.getMonth(); // 0-indexed
@@ -57,7 +57,7 @@ function computeDisponible(card, movements, stmtPayments) {
 
   const totalCargado = movements
     .filter(m => m.creditCardId === card.id && m.estado !== 'Cancelado')
-    .reduce((s, m) => s + m.monto, 0);
+    .reduce((s, m) => s + moneyBase(m, 'monto'), 0);
 
   let totalPagado = 0;
   for (const period of periods) {
@@ -155,8 +155,9 @@ function EditMovimientoTCModal({ open, onClose, mov, onSave }) {
   );
 }
 
-function TarjetasScreen({ data, onNav, onDataChange }) {
+function TarjetasScreen({ data, onNav, onDataChange, auth }) {
   const { creditCards, creditCardMovements, clients, operations, creditCardStatementPayments } = data;
+  const hp = window.hasPermission || (() => true);
   const [showNew, setShowNew] = React.useState(false);
   const [editMov, setEditMov] = React.useState(null);
 
@@ -179,9 +180,14 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
   }
 
   async function saveCard(form) {
+    if (!hp('cards.create')) { alert('No tenés permiso para crear tarjetas.'); return; }
     const sb = window.__supabase;
+    const orgId = auth?.currentOrganization?.id;
+    const userId = auth?.user?.id;
     const { data: inserted, error } = await sb.from('credit_cards')
       .insert(toSnake({
+        organizationId:           orgId,
+        createdBy:                userId || undefined,
         nombre:                   form.nombre,
         banco:                    form.banco,
         titular:                  form.titular,
@@ -204,7 +210,7 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
 
   return (
     <div>
-      <SectionHeader title="Tarjetas de crédito" actions={<Btn onClick={() => setShowNew(true)}>+ Nueva tarjeta</Btn>} />
+      <SectionHeader title="Tarjetas de crédito" actions={hp('cards.create') && <Btn onClick={() => setShowNew(true)}>+ Nueva tarjeta</Btn>} />
 
       {/* Card visuals */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginBottom: 24 }}>
@@ -236,22 +242,22 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
                 </div>
               </div>
               {/* Card info */}
-              <div style={{ background: '#fff', padding: '14px 18px' }}>
+              <div style={{ background: 'var(--bg-surface)', padding: '14px 18px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Límite total</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(cc.limiteTotal)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Límite total</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(cc.limiteTotal)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Disponible</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Disponible</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(disponible)}</div>
                   </div>
                 </div>
                 {/* Usage bar — shows net remaining debt / limit */}
-                <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ height: 6, background: 'var(--bg-subtle)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
                   <div style={{ height: '100%', width: `${Math.min(Math.max(pct, 0), 100)}%`, background: pct > 80 ? '#dc2626' : pct > 60 ? '#d97706' : '#4f46e5', borderRadius: 3, transition: 'width 0.3s' }} />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-faint)' }}>
                   <span>Deuda neta: {formatCurrency(netDebt)} ({maskSensitiveNumber(Math.max(pct, 0).toFixed(0), '%')})</span>
                   <span>{movs.length} movimiento{movs.length !== 1 ? 's' : ''}</span>
                 </div>
@@ -263,19 +269,19 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
 
       {/* All movements table */}
       <Card>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9' }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>Todos los movimientos de tarjeta</span>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}>Todos los movimientos de tarjeta</span>
         </div>
         <DataTable
           columns={[
-            { key: 'creditCardId', label: 'Tarjeta', render: v => { const cc = creditCards.find(c => c.id === v); return <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{cc?.nombre || '—'}</span>; }},
+            { key: 'creditCardId', label: 'Tarjeta', render: v => { const cc = creditCards.find(c => c.id === v); return <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{cc?.nombre || '—'}</span>; }},
             { key: 'clientId', label: 'Cliente', render: v => clients.find(c => c.id === v)?.nombre || '—' },
             { key: 'fechaCompra', label: 'Fecha compra', render: v => formatDate(v) },
             { key: 'descripcion', label: 'Descripción' },
             { key: 'monto', label: 'Monto', mono: true, render: v => formatCurrency(v) },
             { key: 'cuotasTarjeta', label: 'Cuotas TC', render: v => `${v}c` },
             { key: 'fechaVencimientoEstimada', label: 'Próx. venc.', render: (v, row) => {
-              if (row.estado !== 'Activo') return <span style={{ color: '#94a3b8' }}>—</span>;
+              if (row.estado !== 'Activo') return <span style={{ color: 'var(--text-faint)' }}>—</span>;
               return <span>{formatDate(computeNextVencimiento(row, creditCards))}</span>;
             }},
             { key: 'estado', label: 'Estado', render: v => <StatusBadge status={v} /> },
@@ -299,7 +305,8 @@ function TarjetasScreen({ data, onNav, onDataChange }) {
   );
 }
 
-function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
+function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange, auth }) {
+  const hp = window.hasPermission || (() => true);
   const { creditCards, creditCardMovements, clients, operations } = data;
   const cc = creditCards.find(c => c.id === cardId);
   const [activeTab, setActiveTab] = React.useState('resumen');
@@ -334,11 +341,13 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
     setEditMov(null);
   }
 
-  if (!cc) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Tarjeta no encontrada.</div>;
+  if (!cc) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Tarjeta no encontrada.</div>;
 
   async function updateCard(form) {
+    if (!hp('cards.edit')) { alert('No tenés permiso para editar tarjetas.'); return; }
     const sb = window.__supabase;
-    const { error } = await sb.from('credit_cards').update(toSnake({
+    const userId = auth?.user?.id;
+    const { error } = await sb.from('credit_cards').update(toSnake({ updatedBy: userId || undefined,
       nombre:                   form.nombre,
       banco:                    form.banco,
       titular:                  form.titular,
@@ -363,6 +372,7 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
   }
 
   async function confirmDeleteCard() {
+    if (!hp('cards.delete')) { alert('No tenés permiso para eliminar tarjetas.'); return; }
     setDeleting(true);
     const sb = window.__supabase;
     const { error } = await sb.from('credit_cards').delete().eq('id', cardId);
@@ -373,10 +383,12 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
   }
 
   async function markPeriodPaid(period) {
+    if (!hp('cards.mark_statement_paid')) { alert('No tenés permiso para marcar resúmenes como pagados.'); return; }
     const sb = window.__supabase;
+    const orgId = auth?.currentOrganization?.id;
     const today = new Date().toISOString().slice(0, 10);
     const { error } = await sb.from('credit_card_statement_payments').upsert(
-      { credit_card_id: cardId, año: period.year, mes: period.month, fecha_pago: today },
+      { organization_id: orgId, credit_card_id: cardId, año: period.year, mes: period.month, fecha_pago: today },
       { onConflict: 'credit_card_id,año,mes' }
     );
     if (error) { alert('Error al registrar pago: ' + error.message); return; }
@@ -406,9 +418,9 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 6, fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, fontSize: 12, color: 'var(--text-faint)', fontFamily: 'DM Sans, sans-serif', alignItems: 'center' }}>
           <button onClick={() => onNav('tarjetas')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f46e5', fontSize: 12 }}>Tarjetas</button>
-          <span>›</span><span style={{ color: '#374151', fontWeight: 600 }}>{cc.nombre}</span>
+          <span>›</span><span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{cc.nombre}</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn size="sm" variant="secondary" onClick={() => setShowEdit(true)}>✏️ Editar</Btn>
@@ -459,12 +471,12 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[['Banco', cc.banco],['Titular', cc.titular],['Últimos dígitos', '···· ' + cc.ultimosDigitos],['Límite total', formatCurrency(cc.limiteTotal)],['Disponible', formatCurrency(disponible)],['Pagado acum.', formatCurrency(totalPagadoCC)],['Día cierre', cc.diaCierre],['Día vencimiento', cc.diaVencimiento],['Moneda', cc.moneda],['Estado', cc.estado]].map(([k,v]) => (
                   <div key={k} style={{ padding: '6px 0', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                    <span style={{ color: '#64748b' }}>{k}</span>
-                    <span style={{ fontWeight: 600, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{v}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{v}</span>
                   </div>
                 ))}
               </div>
-              {cc.notas && <div style={{ marginTop: 12, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>{cc.notas}</div>}
+              {cc.notas && <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--bg-page)', borderRadius: 6, fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>{cc.notas}</div>}
             </div>
           )}
           {activeTab === 'movimientos' && (
@@ -476,7 +488,7 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
               { key: 'cuotasTarjeta', label: 'Cuotas TC' },
               { key: 'cuotaActualTarjeta', label: 'Cuota actual', render: (v, row) => `${maskSensitiveNumber(v)}/${maskSensitiveNumber(row.cuotasTarjeta)}` },
               { key: 'fechaVencimientoEstimada', label: 'Próx. venc.', render: (v, row) => {
-                if (row.estado !== 'Activo') return <span style={{ color: '#94a3b8' }}>—</span>;
+                if (row.estado !== 'Activo') return <span style={{ color: 'var(--text-faint)' }}>—</span>;
                 return <span>{formatDate(computeNextVencimiento(row, creditCards))}</span>;
               }},
               { key: 'estado', label: 'Estado', render: v => <StatusBadge status={v} /> },
@@ -502,21 +514,21 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
             const today = new Date().toISOString().slice(0, 10);
             return (
               <div>
-                <div style={{ marginBottom: 14, color: '#64748b', fontSize: 13 }}>
+                <div style={{ marginBottom: 14, color: 'var(--text-muted)', fontSize: 13 }}>
                   Monto generado en cada resumen mensual según los movimientos activos. Marcá los períodos que ya pagaste.
                 </div>
                 {periods.length === 0 ? (
-                  <div style={{ color: '#94a3b8', textAlign: 'center', padding: 32 }}>Sin movimientos activos para calcular resúmenes.</div>
+                  <div style={{ color: 'var(--text-faint)', textAlign: 'center', padding: 32 }}>Sin movimientos activos para calcular resúmenes.</div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                       <thead>
-                        <tr style={{ background: '#f8fafc' }}>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Período</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vencimiento</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'right', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monto</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detalle</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estado</th>
+                        <tr style={{ background: 'var(--bg-page)' }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Período</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vencimiento</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monto</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detalle</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estado</th>
                           <th style={{ padding: '10px 12px' }}></th>
                         </tr>
                       </thead>
@@ -526,17 +538,17 @@ function TarjetaDetalleScreen({ cardId, data, onNav, onDataChange }) {
                           const isPast = period.fechaVencimiento < today;
                           const rowBg = paid ? '#f0fdf4' : isPast ? '#fff7ed' : 'white';
                           return (
-                            <tr key={period.key} style={{ borderBottom: '1px solid #f1f5f9', background: rowBg }}>
-                              <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0f172a' }}>
+                            <tr key={period.key} style={{ borderBottom: '1px solid var(--border-subtle)', background: rowBg }}>
+                              <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 {MONTH_NAMES[period.month - 1]} {period.year}
                               </td>
-                              <td style={{ padding: '10px 12px', color: '#64748b', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>
+                              <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>
                                 {formatDate(period.fechaVencimiento)}
                               </td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontWeight: 700, color: '#0f172a' }}>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 {formatCurrency(period.monto)}
                               </td>
-                              <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>
+                              <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 12 }}>
                                 {period.detalle.map((d, i) => (
                                   <div key={i} style={{ marginBottom: i < period.detalle.length - 1 ? 2 : 0 }}>
                                     {d.mov.descripcion} — cuota {d.cuotaNum}/{d.mov.cuotasTarjeta} ({formatCurrency(d.monto)})

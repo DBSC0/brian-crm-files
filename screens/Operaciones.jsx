@@ -161,6 +161,9 @@ function NuevaOperacionModal({
     costoReal: '',
     montoPactado: '',
     entrega: '0',
+    moneda: 'ARS',
+    tipoCambio: '1',
+    tipoCambioFuente: 'manual',
     cantidadCuotas: 3,
     tasaInteres: 34.68,
     tasaManual: false,
@@ -173,8 +176,22 @@ function NuevaOperacionModal({
   };
 
   const [form, setForm] = React.useState(defaultForm);
+  const [usdRates, setUsdRates] = React.useState([]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const currency = normalizeCurrency(form.moneda);
+  const exchangeRate = normalizeExchangeRate(form.tipoCambio);
+  const baseOf = amount => toBaseAmount(amount, currency, exchangeRate);
+
+  const selectRateSource = (source) => {
+    const rate = usdRates.find(r => r.key === source);
+    setForm(f => ({
+      ...f,
+      tipoCambioFuente: source,
+      tipoCambio: rate ? String(rate.rate) : f.tipoCambio,
+    }));
+  };
 
   const setMoney = (k, v) => {
     setForm(f => ({
@@ -209,6 +226,7 @@ function NuevaOperacionModal({
 
   React.useEffect(() => {
     if (open) {
+      fetchUsdRates().then(setUsdRates);
       setStep(1);
       setErrors({});
 
@@ -218,6 +236,10 @@ function NuevaOperacionModal({
           normalizeMoneyFields({
             ...defaultForm,
             ...initialValues,
+            tasaManual:
+              initialValues.tasaManual !== undefined
+                ? initialValues.tasaManual
+                : true,
             redondearCuotas:
               initialValues.redondearCuotas !== undefined
                 ? initialValues.redondearCuotas
@@ -246,15 +268,37 @@ function NuevaOperacionModal({
     set('primerVencimiento', addMonthsISO(form.fechaInicio, 1));
   }, [form.fechaInicio]);
 
-  React.useEffect(() => {
-    if (!form.tasaManual) {
-      const found = (cfg?.tasasPorCuotas || []).find(
-        t => t.cuotas === Number(form.cantidadCuotas) && t.activa
-      );
+  const activeConfiguredRate = React.useMemo(
+    () => findActiveRate(cfg, currency, form.cantidadCuotas, form.fechaInicio),
+    [cfg, currency, form.cantidadCuotas, form.fechaInicio]
+  );
 
-      if (found) set('tasaInteres', found.tasa);
+  const missingRateMessage =
+    !hasPayments && !form.tasaManual && !activeConfiguredRate
+      ? `No hay una tasa activa configurada para ${form.cantidadCuotas} cuotas en ${currency}. Podés cargar una tasa manual o configurar el plan en Configuración > Tasas.`
+      : '';
+
+  React.useEffect(() => {
+    if (form.tasaManual) return;
+    if (hasPayments) return;
+
+    if (activeConfiguredRate) {
+      set('tasaInteres', activeConfiguredRate.tasa);
+    } else {
+      set('tasaInteres', '');
     }
-  }, [form.cantidadCuotas, form.tasaManual]);
+  }, [activeConfiguredRate, form.tasaManual]);
+
+  React.useEffect(() => {
+    if (form.moneda === 'ARS') {
+      setForm(f => ({ ...f, tipoCambio: '1', tipoCambioFuente: 'historico_ars' }));
+    } else if (form.moneda === 'USD' && (!form.tipoCambio || Number(form.tipoCambio) <= 1)) {
+      const preferred = usdRates.find(r => r.key === 'blue') || usdRates[0];
+      if (preferred) {
+        setForm(f => ({ ...f, tipoCambio: String(preferred.rate), tipoCambioFuente: preferred.key }));
+      }
+    }
+  }, [form.moneda, usdRates]);
 
   const totals = React.useMemo(() => {
     const c = moneyToNumber(form.costoReal);
@@ -265,14 +309,15 @@ function NuevaOperacionModal({
 
     const baseTotals = calculateOperationTotals(c, m, e, cuotas, tasa);
 
-    if (!form.redondearCuotas) {
+    const roundingStep = currency === 'USD' ? 10 : 1000;
+
+    if (!form.redondearCuotas || cuotas === 1 || baseTotals.valorCuota % roundingStep === 0) {
       return {
         ...baseTotals,
         ajusteRedondeo: 0,
       };
     }
-
-    const valorCuotaRedondeado = roundUpTo(baseTotals.valorCuota, 1000);
+    const valorCuotaRedondeado = roundUpTo(baseTotals.valorCuota, roundingStep);
     const totalFinanciadoRedondeado = valorCuotaRedondeado * cuotas;
     const interesCalculadoRedondeado = totalFinanciadoRedondeado - baseTotals.montoFinanciado;
     const totalEsperadoRedondeado = totalFinanciadoRedondeado + e;
@@ -295,6 +340,7 @@ function NuevaOperacionModal({
     form.cantidadCuotas,
     form.tasaInteres,
     form.redondearCuotas,
+    form.moneda,
   ]);
 
   const schedule = React.useMemo(() => {
@@ -349,6 +395,10 @@ function NuevaOperacionModal({
       e.entrega = 'La entrega no puede superar el monto pactado';
     }
 
+    if (form.moneda === 'USD' && normalizeExchangeRate(form.tipoCambio) <= 1) {
+      e.tipoCambio = 'Ingresá una cotización válida';
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -385,6 +435,9 @@ function NuevaOperacionModal({
       costoReal,
       montoPactado,
       entrega,
+      moneda: currency,
+      tipoCambio: exchangeRate,
+      tipoCambioFuente: form.tipoCambioFuente || (currency === 'ARS' ? 'historico_ars' : 'manual'),
       montoFinanciado: totals.montoFinanciado,
       cantidadCuotas: parseInt(form.cantidadCuotas),
       tasaInteres: parseFloat(form.tasaInteres),
@@ -393,6 +446,15 @@ function NuevaOperacionModal({
       valorCuota: totals.valorCuota,
       totalEsperado: totals.totalEsperado,
       gananciaEsperada: totals.gananciaEsperada,
+      costoRealBase: baseOf(costoReal),
+      montoPactadoBase: baseOf(montoPactado),
+      entregaBase: baseOf(entrega),
+      montoFinanciadoBase: baseOf(totals.montoFinanciado),
+      interesCalculadoBase: baseOf(totals.interesCalculado),
+      totalFinanciadoBase: baseOf(totals.totalFinanciado),
+      valorCuotaBase: baseOf(totals.valorCuota),
+      totalEsperadoBase: baseOf(totals.totalEsperado),
+      gananciaEsperadaBase: baseOf(totals.gananciaEsperada),
       redondearCuotas: !!form.redondearCuotas,
       fuenteFinanciacion: form.fuenteFinanciacion,
       creditCardId:
@@ -418,6 +480,13 @@ function NuevaOperacionModal({
       montoPagado: 0,
       saldoPendiente: s.monto,
       moraAplicada: 0,
+      moneda: currency,
+      tipoCambio: exchangeRate,
+      tipoCambioFuente: form.tipoCambioFuente || (currency === 'ARS' ? 'historico_ars' : 'manual'),
+      montoProgramadoBase: baseOf(s.monto),
+      montoPagadoBase: 0,
+      saldoPendienteBase: baseOf(s.monto),
+      moraAplicadaBase: 0,
       estado: 'Pendiente',
     }));
 
@@ -428,6 +497,10 @@ function NuevaOperacionModal({
           ? 'Salida por préstamo'
           : 'Salida por compra de producto',
       monto: -costoReal,
+      moneda: currency,
+      tipoCambio: exchangeRate,
+      tipoCambioFuente: form.tipoCambioFuente || (currency === 'ARS' ? 'historico_ars' : 'manual'),
+      montoBase: -baseOf(costoReal),
       clientId: form.clientId,
       operationId: newOp.id,
       paymentId: null,
@@ -456,6 +529,10 @@ function NuevaOperacionModal({
               fechaCompra: form.fechaCompraTC,
               descripcion: form.descripcion,
               monto: costoReal,
+              moneda: currency,
+              tipoCambio: exchangeRate,
+              tipoCambioFuente: form.tipoCambioFuente || (currency === 'ARS' ? 'historico_ars' : 'manual'),
+              montoBase: baseOf(costoReal),
               cuotasTarjeta: parseInt(form.cuotasTarjeta),
               cuotaActualTarjeta: 1,
               fechaCierreEstimada: addMonths(form.fechaCompraTC, 1),
@@ -482,13 +559,13 @@ function NuevaOperacionModal({
         display: 'flex',
         justifyContent: 'space-between',
         padding: '6px 0',
-        borderBottom: '1px solid #f1f5f9',
+        borderBottom: '1px solid var(--border-subtle)',
       }}
     >
       <span
         style={{
           fontSize: 13,
-          color: '#64748b',
+          color: 'var(--text-muted)',
           fontFamily: 'DM Sans, sans-serif',
         }}
       >
@@ -676,15 +753,40 @@ function NuevaOperacionModal({
 
       {step === 2 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Field label="Moneda de la operación" required>
+            <Select value={form.moneda} onChange={e => set('moneda', e.target.value)} disabled={hasPayments}>
+              <option value="ARS">ARS - Pesos argentinos</option>
+              <option value="USD">USD - Dólares</option>
+            </Select>
+          </Field>
+
+          <Field label="Cotización aplicada" error={errors.tipoCambio} hint={form.moneda === 'USD' ? 'Queda congelada al guardar' : 'ARS base'}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {form.moneda === 'USD' && (
+                <Select value={form.tipoCambioFuente || 'manual'} onChange={e => selectRateSource(e.target.value)} disabled={hasPayments} style={{ maxWidth: 130 }}>
+                  <option value="manual">Manual</option>
+                  {usdRates.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                </Select>
+              )}
+              <Input
+                type="number"
+                step="0.01"
+                value={form.tipoCambio}
+                onChange={e => set('tipoCambio', e.target.value)}
+                disabled={form.moneda === 'ARS' || hasPayments}
+              />
+            </div>
+          </Field>
+
           {hasPayments && (
             <div
               style={{
                 gridColumn: '1/-1',
-                background: '#f1f5f9',
+                background: 'var(--bg-subtle)',
                 borderRadius: 8,
                 padding: '10px 14px',
                 fontSize: 13,
-                color: '#64748b',
+                color: 'var(--text-muted)',
                 fontFamily: 'DM Sans, sans-serif',
               }}
             >
@@ -692,24 +794,24 @@ function NuevaOperacionModal({
             </div>
           )}
 
-          <Field label="Costo real" required error={errors.costoReal} hint="Lo que vos gastás/entregás">
+          <Field label="Costo real" required error={errors.costoReal} hint={`Lo que vos gastás/entregás en ${currency}`}>
             <Input
               type="text"
               inputMode="numeric"
               value={form.costoReal}
               onChange={e => setMoney('costoReal', e.target.value)}
-              placeholder="200.000"
+              placeholder={currency === 'USD' ? '1.000' : '200.000'}
               disabled={hasPayments}
             />
           </Field>
 
-          <Field label="Monto pactado" required error={errors.montoPactado} hint="Lo que acordaste cobrar">
+          <Field label="Monto pactado" required error={errors.montoPactado} hint={`Lo que acordaste cobrar en ${currency}`}>
             <Input
               type="text"
               inputMode="numeric"
               value={form.montoPactado}
               onChange={e => setMoney('montoPactado', e.target.value)}
-              placeholder="200.000"
+              placeholder={currency === 'USD' ? '1.200' : '200.000'}
               disabled={hasPayments}
             />
           </Field>
@@ -739,7 +841,7 @@ function NuevaOperacionModal({
             </Select>
           </Field>
 
-          <Field label="Tasa de interés (%)" hint={form.tasaManual ? 'Manual' : 'Auto desde configuración'}>
+          <Field label="Tasa de interés (%)" hint={form.tasaManual ? 'Manual' : `Auto desde configuración (${currency})`}>
             <Input
               type="number"
               value={form.tasaInteres}
@@ -747,6 +849,12 @@ function NuevaOperacionModal({
               disabled={!form.tasaManual || hasPayments}
             />
           </Field>
+
+          {missingRateMessage && (
+            <div style={{ gridColumn: '1/-1', background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.4 }}>
+              {missingRateMessage}
+            </div>
+          )}
 
           <Field label=" ">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 8 }}>
@@ -791,18 +899,18 @@ function NuevaOperacionModal({
                 </label>
               </div>
 
-              <div style={{ fontSize: 12, color: '#94a3b8', paddingLeft: 22 }}>
-                Ej.: 99.535 → 100.000
+              <div style={{ fontSize: 12, color: 'var(--text-faint)', paddingLeft: 22 }}>
+                {currency === 'USD' ? 'Ej.: 43,20 → 50,00' : 'Ej.: 99.535 → 100.000'}
               </div>
             </div>
           </Field>
 
-          <div style={{ gridColumn: '1/-1', background: '#f8fafc', borderRadius: 10, padding: 14 }}>
+          <div style={{ gridColumn: '1/-1', background: 'var(--bg-page)', borderRadius: 10, padding: 14 }}>
             <div
               style={{
                 fontSize: 12,
                 fontWeight: 700,
-                color: '#94a3b8',
+                color: 'var(--text-faint)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 10,
@@ -811,15 +919,15 @@ function NuevaOperacionModal({
               Cálculo automático
             </div>
 
-            <CalcRow label="Monto financiado" value={formatCurrency(totals.montoFinanciado)} />
-            <CalcRow label="Interés calculado" value={formatCurrency(totals.interesCalculado)} />
-            <CalcRow label="Total financiado" value={formatCurrency(totals.totalFinanciado)} />
-            <CalcRow label="Valor de cuota" value={formatCurrency(totals.valorCuota)} bold />
+            <CalcRow label="Monto financiado" value={formatMoneyWithEquivalent(totals.montoFinanciado, currency, exchangeRate, { compact: true })} />
+            <CalcRow label="Interés calculado" value={formatMoneyWithEquivalent(totals.interesCalculado, currency, exchangeRate, { compact: true })} />
+            <CalcRow label="Total financiado" value={formatMoneyWithEquivalent(totals.totalFinanciado, currency, exchangeRate, { compact: true })} />
+            <CalcRow label="Valor de cuota" value={formatMoneyWithEquivalent(totals.valorCuota, currency, exchangeRate, { compact: true })} bold />
             {form.redondearCuotas && totals.ajusteRedondeo > 0 && (
-              <CalcRow label="Ajuste por redondeo" value={formatCurrency(totals.ajusteRedondeo)} />
+              <CalcRow label="Ajuste por redondeo" value={formatMoney(totals.ajusteRedondeo, currency)} />
             )}
-            <CalcRow label="Total esperado (con entrega)" value={formatCurrency(totals.totalEsperado)} bold />
-            <CalcRow label="Ganancia esperada" value={formatCurrency(totals.gananciaEsperada)} bold accent="#16a34a" />
+            <CalcRow label="Total esperado (con entrega)" value={formatMoneyWithEquivalent(totals.totalEsperado, currency, exchangeRate, { compact: true })} bold />
+            <CalcRow label="Ganancia esperada" value={formatMoneyWithEquivalent(totals.gananciaEsperada, currency, exchangeRate, { compact: true })} bold accent="#16a34a" />
           </div>
         </div>
       )}
@@ -857,7 +965,7 @@ function NuevaOperacionModal({
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
                 gap: 14,
-                background: '#f8fafc',
+                background: 'var(--bg-page)',
                 borderRadius: 10,
                 padding: 14,
               }}
@@ -914,12 +1022,12 @@ function NuevaOperacionModal({
 
       {step === 4 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16 }}>
+          <div style={{ background: 'var(--bg-page)', borderRadius: 10, padding: 16 }}>
             <div
               style={{
                 fontSize: 12,
                 fontWeight: 700,
-                color: '#94a3b8',
+                color: 'var(--text-faint)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 12,
@@ -933,14 +1041,15 @@ function NuevaOperacionModal({
                 ['Cliente', clients.find(c => c.id === form.clientId)?.nombre || '—'],
                 ['Tipo', form.tipo],
                 ['Descripción', form.descripcion],
-                ['Costo real', formatCurrency(moneyToNumber(form.costoReal))],
-                ['Monto pactado', formatCurrency(moneyToNumber(form.montoPactado))],
-                ['Entrega inicial', formatCurrency(moneyToNumber(form.entrega))],
+                ['Moneda', currency === 'USD' ? `USD @ ${maskSensitiveNumber(exchangeRate)}` : 'ARS'],
+                ['Costo real', formatMoneyWithEquivalent(moneyToNumber(form.costoReal), currency, exchangeRate, { compact: true })],
+                ['Monto pactado', formatMoneyWithEquivalent(moneyToNumber(form.montoPactado), currency, exchangeRate, { compact: true })],
+                ['Entrega inicial', formatMoneyWithEquivalent(moneyToNumber(form.entrega), currency, exchangeRate, { compact: true })],
                 ['Cuotas', form.cantidadCuotas],
                 ['Tasa', form.tasaInteres + '%'],
                 ['Cuotas redondeadas', form.redondearCuotas ? 'Sí' : 'No'],
-                ['Total a cobrar', formatCurrency(totals.totalEsperado)],
-                ['Ganancia esperada', formatCurrency(totals.gananciaEsperada)],
+                ['Total a cobrar', formatMoneyWithEquivalent(totals.totalEsperado, currency, exchangeRate, { compact: true })],
+                ['Ganancia esperada', formatMoneyWithEquivalent(totals.gananciaEsperada, currency, exchangeRate, { compact: true })],
                 ['Fuente', form.fuenteFinanciacion],
                 ['Primer venc.', formatDate(form.primerVencimiento)],
               ].map(([label, val]) => (
@@ -950,15 +1059,15 @@ function NuevaOperacionModal({
                     display: 'flex',
                     justifyContent: 'space-between',
                     padding: '4px 0',
-                    borderBottom: '1px solid #f1f5f9',
+                    borderBottom: '1px solid var(--border-subtle)',
                   }}
                 >
-                  <span style={{ fontSize: 12, color: '#64748b' }}>{label}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
                   <span
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      color: '#0f172a',
+                      color: 'var(--text-primary)',
                       fontFamily: 'DM Mono, monospace',
                     }}
                   >
@@ -974,7 +1083,7 @@ function NuevaOperacionModal({
               style={{
                 fontSize: 12,
                 fontWeight: 700,
-                color: '#94a3b8',
+                color: 'var(--text-faint)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 10,
@@ -991,7 +1100,7 @@ function NuevaOperacionModal({
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '8px 12px',
-                  background: '#f8fafc',
+                  background: 'var(--bg-page)',
                   borderRadius: 6,
                   marginBottom: 4,
                 }}
@@ -1017,7 +1126,7 @@ function NuevaOperacionModal({
                   <span
                     style={{
                       fontSize: 13,
-                      color: '#374151',
+                      color: 'var(--text-secondary)',
                       fontFamily: 'DM Sans, sans-serif',
                     }}
                   >
@@ -1026,18 +1135,18 @@ function NuevaOperacionModal({
                 </div>
 
                 <div style={{ display: 'flex', gap: 16 }}>
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
                     {formatDate(s.fecha)}
                   </span>
                   <span
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: '#0f172a',
+                      color: 'var(--text-primary)',
                       fontFamily: 'DM Mono, monospace',
                     }}
                   >
-                    {formatCurrency(s.monto)}
+                    {formatMoneyWithEquivalent(s.monto, currency, exchangeRate, { compact: true })}
                   </span>
                 </div>
               </div>
@@ -1054,7 +1163,7 @@ function NuevaOperacionModal({
             style={{
               fontSize: 18,
               fontWeight: 700,
-              color: '#0f172a',
+              color: 'var(--text-primary)',
               marginBottom: 8,
               fontFamily: 'DM Sans, sans-serif',
             }}
@@ -1062,7 +1171,7 @@ function NuevaOperacionModal({
             Listo para confirmar
           </div>
 
-          <div style={{ fontSize: 14, color: '#64748b', marginBottom: 20 }}>
+          <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>
             {isEdit
               ? `Se van a actualizar los datos de la operación: ${maskSensitiveNumber(form.cantidadCuotas)} cuota(s) recalculadas, movimientos de caja y tarjeta actualizados.`
               : `Se va a crear la operación con ${maskSensitiveNumber(form.cantidadCuotas)} cuota(s), un comprobante interno y el movimiento de caja correspondiente.`}
@@ -1070,7 +1179,7 @@ function NuevaOperacionModal({
 
           <div
             style={{
-              background: '#f8fafc',
+              background: 'var(--bg-page)',
               borderRadius: 10,
               padding: 16,
               textAlign: 'left',
@@ -1081,9 +1190,10 @@ function NuevaOperacionModal({
             <CalcRow label="Cliente" value={clients.find(c => c.id === form.clientId)?.nombre || '—'} />
             <CalcRow label="Tipo" value={form.tipo} />
             <CalcRow label="Redondeo de cuotas" value={form.redondearCuotas ? 'Activado' : 'Desactivado'} />
-            <CalcRow label="Total a cobrar" value={formatCurrency(totals.totalEsperado)} bold />
-            <CalcRow label="Cuotas" value={`${maskSensitiveNumber(form.cantidadCuotas)} x ${formatCurrency(totals.valorCuota)}`} />
-            <CalcRow label="Ganancia esperada" value={formatCurrency(totals.gananciaEsperada)} bold accent="#16a34a" />
+            <CalcRow label="Moneda" value={currency === 'USD' ? `USD @ ${maskSensitiveNumber(exchangeRate)}` : 'ARS'} />
+            <CalcRow label="Total a cobrar" value={formatMoneyWithEquivalent(totals.totalEsperado, currency, exchangeRate, { compact: true })} bold />
+            <CalcRow label="Cuotas" value={`${maskSensitiveNumber(form.cantidadCuotas)} x ${formatMoney(totals.valorCuota, currency)}`} />
+            <CalcRow label="Ganancia esperada" value={formatMoneyWithEquivalent(totals.gananciaEsperada, currency, exchangeRate, { compact: true })} bold accent="#16a34a" />
           </div>
         </div>
       )}
@@ -1091,8 +1201,11 @@ function NuevaOperacionModal({
   );
 }
 
-function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselectedClientId }) {
+function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselectedClientId, auth }) {
   const { clients, operations, installments, creditCards } = data;
+  const hp = window.hasPermission || (() => true);
+  const orgId = auth?.currentOrganization?.id;
+  const userId = auth?.user?.id;
   const [showNew, setShowNew] = React.useState(false);
   const [filters, setFilters] = React.useState({});
   const [success, setSuccess] = React.useState(false);
@@ -1137,12 +1250,17 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
 
     const opPayload = toSnake({
       codigo:            operationCode,
+      organizationId:    orgId,
+      createdBy:         userId,
       clientId:          newOp.clientId,
       tipo:              newOp.tipo,
       descripcion:       newOp.descripcion,
       costoReal:         newOp.costoReal,
       montoPactado:      newOp.montoPactado,
       entrega:           newOp.entrega,
+      moneda:            newOp.moneda || 'ARS',
+      tipoCambio:        newOp.tipoCambio || 1,
+      tipoCambioFuente:  newOp.tipoCambioFuente || 'historico_ars',
       montoFinanciado:   newOp.montoFinanciado,
       cantidadCuotas:    newOp.cantidadCuotas,
       tasaInteres:       newOp.tasaInteres,
@@ -1151,6 +1269,15 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
       valorCuota:        newOp.valorCuota,
       totalEsperado:     newOp.totalEsperado,
       gananciaEsperada:  newOp.gananciaEsperada,
+      costoRealBase:     newOp.costoRealBase,
+      montoPactadoBase:  newOp.montoPactadoBase,
+      entregaBase:       newOp.entregaBase,
+      montoFinanciadoBase: newOp.montoFinanciadoBase,
+      interesCalculadoBase: newOp.interesCalculadoBase,
+      totalFinanciadoBase: newOp.totalFinanciadoBase,
+      valorCuotaBase:    newOp.valorCuotaBase,
+      totalEsperadoBase: newOp.totalEsperadoBase,
+      gananciaEsperadaBase: newOp.gananciaEsperadaBase,
       fuenteFinanciacion: newOp.fuenteFinanciacion,
       creditCardId:      newOp.creditCardId || null,
       fechaInicio:       newOp.fechaInicio,
@@ -1159,24 +1286,52 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
       notas:             newOp.notas || null,
     });
     const instsPayload = newInsts.map((i, idx) => ({
+      organization_id:   orgId,
+      created_by:        userId,
       codigo:            installmentCodes[idx],
+      client_id:         newOp.clientId,
       numero_cuota:      i.numeroCuota,
       total_cuotas:      i.totalCuotas,
       fecha_vencimiento: i.fechaVencimiento,
       monto_programado:  i.montoProgramado,
+      monto_pagado:      i.montoPagado || 0,
+      saldo_pendiente:   i.saldoPendiente,
+      mora_aplicada:     i.moraAplicada || 0,
+      estado:            i.estado || 'Pendiente',
+      moneda:            i.moneda || newOp.moneda || 'ARS',
+      tipo_cambio:       i.tipoCambio || newOp.tipoCambio || 1,
+      tipo_cambio_fuente: i.tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_programado_base: i.montoProgramadoBase,
+      monto_pagado_base: i.montoPagadoBase || 0,
+      saldo_pendiente_base: i.saldoPendienteBase,
+      mora_aplicada_base: i.moraAplicadaBase || 0,
     }));
     const cashPayload = {
+      organization_id: orgId,
+      created_by:      userId,
+      client_id:       newOp.clientId,
       tipo: newCash.tipo,
       monto: newCash.monto,
       descripcion: `${operationCode} — ${newOp.descripcion}`,
       fecha: newCash.fecha || newOp.fechaInicio,
+      moneda: newCash.moneda || newOp.moneda || 'ARS',
+      tipo_cambio: newCash.tipoCambio || newOp.tipoCambio || 1,
+      tipo_cambio_fuente: newCash.tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_base: newCash.montoBase ?? newCash.monto,
     };
-    const voucherPayload = { codigo: voucherCode, fecha: newVoucher.fecha || newOp.fechaInicio };
+    const voucherPayload = { organization_id: orgId, client_id: newOp.clientId, codigo: voucherCode, fecha: newVoucher.fecha || newOp.fechaInicio };
     const ccPayload = newCCMovs.length > 0 ? {
+      organization_id:             orgId,
+      created_by:                  userId,
+      client_id:                   newOp.clientId,
       credit_card_id:              newCCMovs[0].creditCardId,
       fecha_compra:                newCCMovs[0].fechaCompra,
       descripcion:                 newCCMovs[0].descripcion,
       monto:                       newCCMovs[0].monto,
+      moneda:                      newCCMovs[0].moneda || newOp.moneda || 'ARS',
+      tipo_cambio:                 newCCMovs[0].tipoCambio || newOp.tipoCambio || 1,
+      tipo_cambio_fuente:          newCCMovs[0].tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_base:                  newCCMovs[0].montoBase ?? newCCMovs[0].monto,
       cuotas_tarjeta:              newCCMovs[0].cuotasTarjeta,
       fecha_cierre_estimada:       newCCMovs[0].fechaCierreEstimada,
       fecha_vencimiento_estimada:  newCCMovs[0].fechaVencimientoEstimada,
@@ -1220,20 +1375,21 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
     )},
     { key: 'clientId', label: 'Cliente', render: v => {
       const c = clients.find(cl => cl.id === v);
-      return <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{c?.nombre || '—'}</span>;
+      return <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{c?.nombre || '—'}</span>;
     }},
-    { key: 'tipo', label: 'Tipo', render: v => <span style={{ fontSize: 11, padding: '2px 8px', background: '#f1f5f9', borderRadius: 6, color: '#475569', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>{v}</span> },
+    { key: 'tipo', label: 'Tipo', render: v => <span style={{ fontSize: 11, padding: '2px 8px', background: 'var(--bg-subtle)', borderRadius: 6, color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>{v}</span> },
+    { key: 'moneda', label: 'Moneda', render: v => <StatusBadge status={v || 'ARS'} /> },
     { key: 'descripcion', label: 'Descripción' },
-    { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${maskSensitiveNumber(v)} x ${formatCurrency(row.valorCuota)}` },
+    { key: 'cantidadCuotas', label: 'Cuotas', render: (v, row) => `${maskSensitiveNumber(v)} x ${formatMoney(row.valorCuota, row.moneda)}` },
     { key: 'tasaInteres', label: 'Tasa', render: v => maskSensitiveNumber(v, '%') },
-    { key: 'totalEsperado', label: 'Total', mono: true, render: v => <span style={{ fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(v)}</span> },
-    { key: 'gananciaEsperada', label: 'Ganancia', mono: true, render: v => <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: '#16a34a' }}>{formatCurrency(v)}</span> },
-    { key: 'fuenteFinanciacion', label: 'Fuente', render: v => <span style={{ fontSize: 11, color: '#64748b' }}>{v}</span> },
+    { key: 'totalEsperado', label: 'Total', mono: true, render: (v, row) => <span style={{ fontWeight: 700, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{formatMoneyWithEquivalent(v, row.moneda, row.tipoCambio, { compact: true })}</span> },
+    { key: 'gananciaEsperada', label: 'Ganancia', mono: true, render: (v, row) => <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: '#16a34a' }}>{formatMoneyWithEquivalent(v, row.moneda, row.tipoCambio, { compact: true })}</span> },
+    { key: 'fuenteFinanciacion', label: 'Fuente', render: v => <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v}</span> },
     { key: 'estado', label: 'Estado', render: v => <StatusBadge status={v} /> },
     { key: '_acc', label: '', sortable: false, render: (_, row) => (
       <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
         <Btn size="sm" variant="ghost" onClick={() => onNav('operaciones', row.id)}>Ver</Btn>
-        <Btn size="sm" variant="ghost" onClick={() => onNav('pagos', null, 'nuevo', null, row.id)}>💳</Btn>
+        {hp('payments.create') && <Btn size="sm" variant="ghost" onClick={() => onNav('pagos', null, 'nuevo', null, row.id)}>💳</Btn>}
       </div>
     )},
   ];
@@ -1241,7 +1397,7 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
   return (
     <div>
       <SectionHeader title="Operaciones" actions={
-        <Btn onClick={() => { setPendingClientId(null); setShowNew(true); }}>+ Nueva operación</Btn>
+        hp('operations.create') && <Btn onClick={() => { setPendingClientId(null); setShowNew(true); }}>+ Nueva operación</Btn>
       } />
       {success && (
         <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 16px', marginBottom: 16, color: '#166534', fontSize: 13, fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
@@ -1250,20 +1406,20 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
       )}
       <Card>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #f8fafc', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input value={filters.cliente || ''} onChange={e => setFilters(f => ({ ...f, cliente: e.target.value }))} placeholder="🔍 Filtrar por cliente..." style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif', minWidth: 180 }} />
-          <select value={filters.estado || ''} onChange={e => setFilters(f => ({ ...f, estado: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+          <input value={filters.cliente || ''} onChange={e => setFilters(f => ({ ...f, cliente: e.target.value }))} placeholder="🔍 Filtrar por cliente..." style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif', minWidth: 180 }} />
+          <select value={filters.estado || ''} onChange={e => setFilters(f => ({ ...f, estado: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
             <option value="">Todos los estados</option>
             {['Activa','Completada','Anulada','Refinanciada'].map(s => <option key={s}>{s}</option>)}
           </select>
-          <select value={filters.tipo || ''} onChange={e => setFilters(f => ({ ...f, tipo: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+          <select value={filters.tipo || ''} onChange={e => setFilters(f => ({ ...f, tipo: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
             <option value="">Todos los tipos</option>
             {['Préstamo en efectivo','Venta financiada','Compra con tarjeta','Otro'].map(s => <option key={s}>{s}</option>)}
           </select>
-          <select value={filters.fuente || ''} onChange={e => setFilters(f => ({ ...f, fuente: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+          <select value={filters.fuente || ''} onChange={e => setFilters(f => ({ ...f, fuente: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
             <option value="">Todas las fuentes</option>
             {['Efectivo','Transferencia','Tarjeta de crédito','Mixta'].map(s => <option key={s}>{s}</option>)}
           </select>
-          <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>{filtered.length} operacion{filtered.length !== 1 ? 'es' : ''}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)', alignSelf: 'center', fontFamily: 'DM Sans, sans-serif' }}>{filtered.length} operacion{filtered.length !== 1 ? 'es' : ''}</span>
         </div>
         <DataTable columns={columns} data={filtered} onRowClick={row => onNav('operaciones', row.id)} emptyMessage="Sin operaciones" defaultSortKey="codigo" defaultSortDir="asc" tableId="operaciones" />
       </Card>
@@ -1275,16 +1431,237 @@ function OperacionesScreen({ data, onNav, onDataChange, openNewModal, preselecte
 // ============================================================
 // DETALLE DE OPERACIÓN
 // ============================================================
-function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
+function OperationIcon({ name, color = '#4f46e5', size = 18 }) {
+  const common = { fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const icons = {
+    chart: (<><path {...common} d="M4 19V11" /><path {...common} d="M10 19V5" /><path {...common} d="M16 19V8" /><path {...common} d="M21 19H3" /></>),
+    calendar: (<><rect {...common} x="3" y="4" width="18" height="18" rx="2" /><path {...common} d="M16 2v4M8 2v4M3 10h18" /></>),
+    card: (<><rect {...common} x="3" y="5" width="18" height="14" rx="2" /><path {...common} d="M3 10h18" /></>),
+    file: (<><path {...common} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path {...common} d="M14 2v6h6M8 13h8M8 17h6" /></>),
+    paperclip: <path {...common} d="m21.4 11.6-8.5 8.5a6 6 0 0 1-8.5-8.5l8.5-8.5a4 4 0 1 1 5.7 5.7l-8.5 8.5a2 2 0 1 1-2.8-2.8l8.5-8.5" />,
+    edit: <path {...common} d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
+    trash: (<><path {...common} d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /><path {...common} d="M10 11v6M14 11v6" /></>),
+    user: (<><path {...common} d="M20 21a8 8 0 0 0-16 0" /><circle {...common} cx="12" cy="7" r="4" /></>),
+    wallet: (<><path {...common} d="M3 7h18v12H3z" /><path {...common} d="M16 12h5v4h-5a2 2 0 0 1 0-4Z" /></>),
+    money: (<><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="M12 7v10M15 9.5A3 3 0 0 0 12 8c-1.7 0-3 1-3 2.3s1.1 2 3 2.2 3 .9 3 2.2S13.7 17 12 17a3.3 3.3 0 0 1-3.2-1.8" /></>),
+    check: (<><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="m8 12 3 3 5-6" /></>),
+    clock: (<><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="M12 7v5l3 2" /></>),
+    alert: (<><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="M12 8v5M12 16h.01" /></>),
+    chevron: <path {...common} d="m9 18 6-6-6-6" />,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block' }}>{icons[name] || icons.chart}</svg>;
+}
+
+function OperationHeaderCard({ op, client, ccCard, onNav, onRegisterPayment, onVoucher, onEdit, onDelete, isMobile }) {
+  return (
+    <Card style={{ padding: isMobile ? 18 : '22px 26px', borderRadius: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 26px rgba(15,23,42,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+        <div style={{ minWidth: 0, flex: '1 1 420px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</span>
+            <StatusBadge status={op.estado} size="md" />
+            <span style={{ fontSize: 12, padding: '5px 12px', background: 'var(--bg-subtle)', borderRadius: 999, color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', fontWeight: 700 }}>{op.tipo}</span>
+          </div>
+          <h2 style={{ margin: '0 0 10px', fontSize: isMobile ? 22 : 26, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif', letterSpacing: 0 }}>{op.descripcion}</h2>
+          <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={() => onNav('clientes', op.clientId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f46e5', fontSize: 13, fontFamily: 'DM Sans, sans-serif', fontWeight: 700, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <OperationIcon name="user" color="#4f46e5" size={15} /> {client?.nombre || 'Cliente'}
+            </button>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><OperationIcon name="calendar" color="#64748b" size={15} />Inicio: {formatDate(op.fechaInicio)}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><OperationIcon name="calendar" color="#64748b" size={15} />Primer venc.: {formatDate(op.primerVencimiento)}</span>
+            {ccCard && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><OperationIcon name="card" color="#64748b" size={15} />{ccCard.nombre} ...{ccCard.ultimosDigitos}</span>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+          <Btn size="md" onClick={onRegisterPayment}><OperationIcon name="card" color="#fff" size={16} /> Registrar pago</Btn>
+          <Btn size="md" variant="secondary" onClick={onVoucher}><OperationIcon name="file" color="#374151" size={16} /> Comprobante</Btn>
+          <Btn size="md" variant="secondary"><OperationIcon name="paperclip" color="#374151" size={16} /> Subir comprobante</Btn>
+          <Btn size="md" variant="secondary" onClick={onEdit}><OperationIcon name="edit" color="#374151" size={16} /> Editar</Btn>
+          <Btn size="md" variant="danger" onClick={onDelete} style={{ background: '#fff1f2', borderColor: '#fecaca', color: '#b91c1c' }}><OperationIcon name="trash" color="#b91c1c" size={16} /> Eliminar</Btn>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function OperationFinancialSummaryCard({ op, totalPagado, saldoPendiente, gananciaObtenida, progressPct, isMobile }) {
+  const paidPct = Math.max(0, Math.min(100, progressPct));
+  const pendingPct = Math.max(0, 100 - paidPct);
+  const items = [
+    { label: 'Total a recuperar', value: formatCurrency(op.totalEsperado), color: '#4f46e5' },
+    { label: 'Cobrado', value: formatCurrency(totalPagado), color: '#059669' },
+    { label: 'Ganancia obtenida', value: formatCurrency(gananciaObtenida), color: '#059669' },
+    { label: 'Ganancia proyectada', value: formatCurrency(op.gananciaEsperada), color: '#4f46e5' },
+  ];
+  return (
+    <div style={{ position: 'relative', overflow: 'hidden', background: 'var(--bg-surface)', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 26 }}>
+      <div style={{ position: 'absolute', right: -70, top: -100, width: 280, height: 250, borderRadius: '45%', background: 'rgba(99,102,241,0.12)' }} />
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ width: 46, height: 46, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <OperationIcon name="chart" color="#4f46e5" size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)' }}>Resumen financiero</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>Saldo pendiente</div>
+          </div>
+        </div>
+        <div style={{ fontSize: isMobile ? 34 : 42, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace', lineHeight: 1, marginBottom: 24 }}>{formatCurrency(saldoPendiente)}</div>
+        <div style={{ height: 1, background: '#e5e7eb', marginBottom: 18 }} />
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: isMobile ? 14 : 0, marginBottom: 18 }}>
+          {items.map((item, idx) => (
+            <div key={item.label} style={{ padding: isMobile ? 0 : '0 18px', borderLeft: !isMobile && idx > 0 ? '1px solid #e5e7eb' : 'none' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 800, marginBottom: 9 }}>{item.label}</div>
+              <div style={{ fontSize: isMobile ? 17 : 21, color: item.color, fontWeight: 900, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap' }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'auto 1fr auto', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 900, color: '#16a34a' }}>Cobrado {maskSensitiveNumber(Math.round(paidPct), '%')}</span>
+          <div style={{ height: 9, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden' }}><div style={{ width: paidPct + '%', height: '100%', borderRadius: 999, background: '#16a34a' }} /></div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-muted)' }}>Pendiente {maskSensitiveNumber(Math.round(pendingPct), '%')}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OperationScheduleStatusCard({ cuotasPagadas, cuotasPendientes, cuotasVencidas, totalCuotas, nextInst, onViewCuotas, onPay, isMobile }) {
+  const nextLabel = nextInst ? `Cuota ${maskSensitiveNumber(nextInst.numeroCuota)}/${maskSensitiveNumber(nextInst.totalCuotas)}` : 'Sin próxima cuota';
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <OperationIcon name="calendar" color="#4f46e5" size={22} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)' }}>Estado del cronograma</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18, alignItems: 'center', marginBottom: 22 }}>
+        <div style={{ display: 'grid', gap: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><OperationIcon name="check" color="#16a34a" size={18} /><span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 700 }}>{maskSensitiveNumber(cuotasPagadas)} / {maskSensitiveNumber(totalCuotas)} cuotas pagadas</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><OperationIcon name="clock" color="#2563eb" size={18} /><span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 700 }}>{maskSensitiveNumber(cuotasPendientes)} pendientes</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><OperationIcon name="alert" color={cuotasVencidas ? '#dc2626' : '#16a34a'} size={18} /><span style={{ fontSize: 14, color: cuotasVencidas ? '#991b1b' : '#0f172a', fontWeight: 700 }}>{maskSensitiveNumber(cuotasVencidas)} vencidas</span></div>
+        </div>
+        <div style={{ borderLeft: isMobile ? 'none' : '1px solid #e5e7eb', paddingLeft: isMobile ? 0 : 24 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 800, marginBottom: 5 }}>Próxima cuota</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10 }}>{nextLabel}</div>
+          {nextInst && (
+            <div style={{ display: 'grid', gap: 8, fontSize: 14, color: 'var(--text-muted)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><OperationIcon name="calendar" color="#64748b" size={16} /> {formatDate(nextInst.fechaVencimiento)}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><OperationIcon name="money" color="#64748b" size={16} /> {formatCurrency(nextInst.saldoPendiente || nextInst.montoProgramado)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.1fr', gap: 10 }}>
+        <Btn variant="secondary" onClick={onViewCuotas} style={{ justifyContent: 'center' }}><OperationIcon name="file" color="#475569" size={16} /> Ver cuotas</Btn>
+        <Btn onClick={onPay} style={{ justifyContent: 'center' }}><OperationIcon name="card" color="#fff" size={16} /> Registrar pago</Btn>
+      </div>
+    </div>
+  );
+}
+
+function OperationMetricCard({ icon, label, value, sub, color, bg }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '18px 20px', background: 'var(--bg-surface)', border: '1px solid #e5e7eb', borderRadius: 14, boxShadow: '0 8px 22px rgba(15,23,42,0.05)', minWidth: 0 }}>
+      <div style={{ width: 44, height: 44, borderRadius: 12, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <OperationIcon name={icon} color={color} size={21} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: '#334155', fontWeight: 700, marginBottom: 5 }}>{label}</div>
+        <div style={{ fontSize: 21, color, fontWeight: 900, fontFamily: 'DM Mono, monospace', lineHeight: 1.1 }}>{value}</div>
+        {sub && <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 4 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function FinancialDetailsPanel({ op, totalPagado, saldoPendiente, gananciaObtenida }) {
+  const blocks = [
+    { title: 'Inversión', icon: 'money', color: '#7c3aed', bg: '#f3e8ff', rows: [['Costo real', formatCurrency(op.costoReal)], ['Entrega inicial', formatCurrency(op.entrega)], ['Fuente', op.fuenteFinanciacion]] },
+    { title: 'Financiación', icon: 'card', color: '#2563eb', bg: '#dbeafe', rows: [['Monto pactado', formatCurrency(op.montoPactado)], ['Monto financiado', formatCurrency(op.montoFinanciado)], ['Tasa de interés', maskSensitiveNumber(op.tasaInteres, '%')], ['Valor de cuota', formatCurrency(op.valorCuota)], ['Total financiado', formatCurrency(op.totalFinanciado)]] },
+    { title: 'Resultado', icon: 'chart', color: '#16a34a', bg: '#dcfce7', rows: [['Cobrado', formatCurrency(totalPagado)], ['Saldo pendiente', formatCurrency(saldoPendiente)], ['Ganancia obtenida', formatCurrency(gananciaObtenida)], ['Ganancia proyectada', formatCurrency(op.gananciaEsperada)]] },
+  ];
+  return (
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: 'var(--bg-surface)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12 }}><OperationIcon name="calendar" color="#475569" size={18} /> Detalles financieros</div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {blocks.map(block => (
+          <div key={block.title} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, background: 'var(--bg-surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, background: block.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><OperationIcon name={block.icon} color={block.color} size={16} /></span>
+              <span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 900 }}>{block.title}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+              {block.rows.map(([label, value]) => (
+                <div key={label} style={{ borderLeft: '1px solid #e5e7eb', paddingLeft: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 900, fontFamily: 'DM Mono, monospace' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InstallmentTimelinePanel({ installments, nextInst, isMobile }) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  function styleFor(inst) {
+    if (inst.estado === 'Pagada' || inst.saldoPendiente <= 0) return { bg: '#f0fdf4', border: '#16a34a', dot: '#16a34a' };
+    if (inst.estado === 'Parcial') return { bg: '#fff7ed', border: '#f97316', dot: '#f97316' };
+    if (new Date(inst.fechaVencimiento + 'T00:00:00') < now) return { bg: '#fef2f2', border: '#dc2626', dot: '#dc2626' };
+    return { bg: '#fff', border: '#e5e7eb', dot: '#cbd5e1' };
+  }
+  return (
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: 'var(--bg-surface)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12 }}><OperationIcon name="calendar" color="#475569" size={18} /> Cronograma</div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {installments.slice().sort((a, b) => a.numeroCuota - b.numeroCuota).map(inst => {
+          const s = styleFor(inst);
+          const isNext = nextInst && inst.id === nextInst.id;
+          return (
+            <div key={inst.id} style={{ position: 'relative', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1fr auto auto', gap: isMobile ? 8 : 14, alignItems: 'center', padding: '10px 12px 10px 42px', background: s.bg, border: `1px solid ${isNext ? '#a5b4fc' : s.border}`, borderRadius: 10, boxShadow: isNext ? '0 0 0 2px rgba(99,102,241,0.10)' : 'none' }}>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, borderRadius: '50%', background: inst.estado === 'Pagada' || inst.saldoPendiente <= 0 ? s.dot : '#fff', border: `2px solid ${isNext ? '#4f46e5' : s.dot}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {(inst.estado === 'Pagada' || inst.saldoPendiente <= 0) && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--bg-surface)' }} />}
+              </span>
+              <div>
+                <div style={{ fontSize: 13, color: isNext ? '#4f46e5' : '#475569', fontWeight: 900 }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</div>
+                {isNext && <div style={{ fontSize: 11, color: '#4f46e5', fontWeight: 800, marginTop: 2 }}>Próxima cuota</div>}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 700 }}>{formatDate(inst.fechaVencimiento)}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 900, fontFamily: 'DM Mono, monospace', textAlign: isMobile ? 'left' : 'right' }}>{formatCurrency(inst.montoProgramado)}</div>
+              <StatusBadge status={inst.estado} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OperacionDetalleScreen({ operationId, data, onNav, onDataChange, auth }) {
   const { clients, operations, installments, payments, paymentAllocations, internalOperationVouchers, creditCards, creditCardMovements } = data;
+  const hp = window.hasPermission || (() => true);
+  const orgId = auth?.currentOrganization?.id;
+  const userId = auth?.user?.id;
   const op = operations.find(o => o.id === operationId);
   const [activeTab, setActiveTab] = React.useState('resumen');
   const [showVoucher, setShowVoucher] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [showEdit, setShowEdit] = React.useState(false);
+  const [viewportWidth, setViewportWidth] = React.useState(() => (window.innerWidth || 1200));
 
-  if (!op) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Operación no encontrada.</div>;
+  React.useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth || 1200);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  if (!op) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Operación no encontrada.</div>;
 
   const client = clients.find(c => c.id === op.clientId);
   const opInst = installments.filter(i => i.operationId === operationId);
@@ -1298,6 +1675,26 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
 
   const totalPagado = opInst.reduce((s, i) => s + i.montoPagado, 0);
   const saldoPendiente = opInst.reduce((s, i) => s + i.saldoPendiente, 0);
+  const moraGenerada = opInst.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).aplicada, i.moneda, i.tipoCambio), 0);
+  const moraCobrada = opInst.reduce((s, i) => s + toBaseAmount(getInstallmentMoraBalance(i).pagada, i.moneda, i.tipoCambio), 0);
+  const totalCobrableActual = opInst.reduce((s, i) => s + moneyBase(i, 'saldoPendiente') + toBaseAmount(getInstallmentMoraBalance(i).pendiente, i.moneda, i.tipoCambio), 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const sortedPendingInst = opInst
+    .filter(i => i.saldoPendiente > 0)
+    .slice()
+    .sort((a, b) => String(a.fechaVencimiento).localeCompare(String(b.fechaVencimiento)));
+  const nextInst = sortedPendingInst[0] || null;
+  const totalCuotas = opInst.length || op.cantidadCuotas || 0;
+  const cuotasPagadas = opInst.filter(i => i.estado === 'Pagada' || i.saldoPendiente <= 0).length;
+  const cuotasPendientes = opInst.filter(i => i.saldoPendiente > 0).length;
+  const cuotasVencidas = opInst.filter(i => new Date(i.fechaVencimiento + 'T00:00:00') < today && i.saldoPendiente > 0).length;
+  const progressPct = op.totalEsperado > 0 ? (totalPagado / op.totalEsperado) * 100 : 0;
+  const gananciaObtenida = totalCuotas > 0 ? Math.round((op.gananciaEsperada || 0) * (cuotasPagadas / totalCuotas)) : 0;
+  const isMobile = viewportWidth < 720;
+  const isTablet = viewportWidth < 1120;
+  const summaryGrid = isTablet ? '1fr' : '2fr 1fr';
+  const metricGrid = isMobile ? '1fr' : isTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))';
+  const detailGrid = viewportWidth < 980 ? '1fr' : '1fr 1fr';
 
   const editInitial = React.useMemo(() => ({
     clientId: op.clientId,
@@ -1308,6 +1705,9 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
     costoReal: String(op.costoReal),
     montoPactado: String(op.montoPactado),
     entrega: String(op.entrega || 0),
+    moneda: op.moneda || 'ARS',
+    tipoCambio: String(op.tipoCambio || 1),
+    tipoCambioFuente: op.tipoCambioFuente || (op.moneda === 'USD' ? 'manual' : 'historico_ars'),
     cantidadCuotas: op.cantidadCuotas,
     tasaInteres: op.tasaInteres,
     tasaManual: true,
@@ -1329,6 +1729,7 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
         fuente_financiacion: newOp.fuenteFinanciacion,
         credit_card_id:      newOp.creditCardId || null,
         notas:               newOp.notas || null,
+        updated_by:          userId,
       }).eq('id', operationId);
       if (error) { alert('Error al editar operación: ' + error.message); return; }
 
@@ -1336,12 +1737,18 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
       await sb.from('credit_card_movements').delete().eq('operation_id', operationId);
       if (newCCMovs && newCCMovs.length > 0) {
         await sb.from('credit_card_movements').insert({
+          organization_id:            orgId,
+          created_by:                 userId,
           operation_id:               operationId,
           client_id:                  op.clientId,
           credit_card_id:             newCCMovs[0].creditCardId,
           fecha_compra:               newCCMovs[0].fechaCompra,
           descripcion:                newCCMovs[0].descripcion,
           monto:                      newCCMovs[0].monto,
+          moneda:                     newCCMovs[0].moneda || op.moneda || 'ARS',
+          tipo_cambio:                newCCMovs[0].tipoCambio || op.tipoCambio || 1,
+          tipo_cambio_fuente:         newCCMovs[0].tipoCambioFuente || op.tipoCambioFuente || 'historico_ars',
+          monto_base:                 newCCMovs[0].montoBase ?? moneyBase(op, 'costoReal'),
           cuotas_tarjeta:             newCCMovs[0].cuotasTarjeta,
           fecha_cierre_estimada:      newCCMovs[0].fechaCierreEstimada,
           fecha_vencimiento_estimada: newCCMovs[0].fechaVencimientoEstimada,
@@ -1361,27 +1768,50 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
 
     // Full update (no payments): rebuild installments + movements via RPC
     const opPayload = toSnake({
+      organizationId: orgId,
+      updatedBy: userId,
       tipo: newOp.tipo, descripcion: newOp.descripcion,
       costoReal: newOp.costoReal, montoPactado: newOp.montoPactado, entrega: newOp.entrega,
+      moneda: newOp.moneda || 'ARS', tipoCambio: newOp.tipoCambio || 1, tipoCambioFuente: newOp.tipoCambioFuente || 'historico_ars',
       montoFinanciado: newOp.montoFinanciado, cantidadCuotas: newOp.cantidadCuotas,
       tasaInteres: newOp.tasaInteres, interesCalculado: newOp.interesCalculado,
       totalFinanciado: newOp.totalFinanciado, valorCuota: newOp.valorCuota,
       totalEsperado: newOp.totalEsperado, gananciaEsperada: newOp.gananciaEsperada,
+      costoRealBase: newOp.costoRealBase, montoPactadoBase: newOp.montoPactadoBase, entregaBase: newOp.entregaBase,
+      montoFinanciadoBase: newOp.montoFinanciadoBase, interesCalculadoBase: newOp.interesCalculadoBase,
+      totalFinanciadoBase: newOp.totalFinanciadoBase, valorCuotaBase: newOp.valorCuotaBase,
+      totalEsperadoBase: newOp.totalEsperadoBase, gananciaEsperadaBase: newOp.gananciaEsperadaBase,
       fuenteFinanciacion: newOp.fuenteFinanciacion,
       creditCardId: newOp.creditCardId || null,
       fechaInicio: newOp.fechaInicio, primerVencimiento: newOp.primerVencimiento,
       notas: newOp.notas || null,
     });
     const instsPayload = newInsts.map(i => ({
+      client_id: i.clientId,
       numero_cuota: i.numeroCuota, total_cuotas: i.totalCuotas,
       fecha_vencimiento: i.fechaVencimiento, monto_programado: i.montoProgramado,
+      monto_pagado: i.montoPagado || 0, saldo_pendiente: i.saldoPendiente, mora_aplicada: i.moraAplicada || 0,
+      estado: i.estado || 'Pendiente', moneda: i.moneda || newOp.moneda || 'ARS',
+      tipo_cambio: i.tipoCambio || newOp.tipoCambio || 1, tipo_cambio_fuente: i.tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_programado_base: i.montoProgramadoBase, monto_pagado_base: i.montoPagadoBase || 0,
+      saldo_pendiente_base: i.saldoPendienteBase, mora_aplicada_base: i.moraAplicadaBase || 0,
     }));
-    const cashPayload = { tipo: newCash.tipo, monto: newCash.monto, descripcion: newCash.descripcion, fecha: newOp.fechaInicio };
+    const cashPayload = {
+      tipo: newCash.tipo, monto: newCash.monto, descripcion: newCash.descripcion, fecha: newOp.fechaInicio,
+      moneda: newCash.moneda || newOp.moneda || 'ARS',
+      tipo_cambio: newCash.tipoCambio || newOp.tipoCambio || 1,
+      tipo_cambio_fuente: newCash.tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_base: newCash.montoBase ?? newCash.monto,
+    };
     const ccPayload = newCCMovs && newCCMovs.length > 0 ? {
       credit_card_id: newCCMovs[0].creditCardId,
       fecha_compra: newCCMovs[0].fechaCompra,
       descripcion: newCCMovs[0].descripcion,
       monto: newCCMovs[0].monto,
+      moneda: newCCMovs[0].moneda || newOp.moneda || 'ARS',
+      tipo_cambio: newCCMovs[0].tipoCambio || newOp.tipoCambio || 1,
+      tipo_cambio_fuente: newCCMovs[0].tipoCambioFuente || newOp.tipoCambioFuente || 'historico_ars',
+      monto_base: newCCMovs[0].montoBase ?? newCCMovs[0].monto,
       cuotas_tarjeta: newCCMovs[0].cuotasTarjeta,
       fecha_cierre_estimada: newCCMovs[0].fechaCierreEstimada,
       fecha_vencimiento_estimada: newCCMovs[0].fechaVencimientoEstimada,
@@ -1418,22 +1848,76 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-faint)', fontFamily: 'DM Sans, sans-serif' }}>
         <button onClick={() => onNav('operaciones')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f46e5', fontSize: 12, fontFamily: 'DM Sans, sans-serif' }}>Operaciones</button>
-        <span>›</span><span style={{ color: '#374151', fontWeight: 600 }}>{op.codigo}</span>
+        <span>›</span><span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{op.codigo}</span>
       </div>
 
+      <OperationHeaderCard
+        op={op}
+        client={client}
+        ccCard={ccCard}
+        onNav={onNav}
+        isMobile={isMobile}
+        onRegisterPayment={() => {
+          if (!hp('payments.create')) { alert('No tenés permiso para registrar pagos.'); return; }
+          onNav('pagos', null, 'nuevo', op.clientId, op.id);
+        }}
+        onVoucher={() => { setShowVoucher(true); setActiveTab('comprobante'); }}
+        onEdit={() => {
+          if (!hp('operations.edit')) { alert('No tenés permiso para editar operaciones.'); return; }
+          setShowEdit(true);
+        }}
+        onDelete={() => {
+          if (!hp('operations.delete')) { alert('No tenés permiso para eliminar operaciones.'); return; }
+          if (opPayments.length > 0) {
+            alert('No se puede eliminar una operación con pagos registrados. Anulá los pagos primero.');
+            return;
+          }
+          setConfirmDelete(true);
+        }}
+      />
+
+      <div style={{ display: 'grid', gridTemplateColumns: summaryGrid, gap: 16 }}>
+        <OperationFinancialSummaryCard
+          op={op}
+          totalPagado={totalPagado}
+          saldoPendiente={saldoPendiente}
+          gananciaObtenida={gananciaObtenida}
+          progressPct={progressPct}
+          isMobile={isMobile}
+        />
+        <OperationScheduleStatusCard
+          cuotasPagadas={cuotasPagadas}
+          cuotasPendientes={cuotasPendientes}
+          cuotasVencidas={cuotasVencidas}
+          totalCuotas={totalCuotas}
+          nextInst={nextInst}
+          isMobile={isMobile}
+          onViewCuotas={() => setActiveTab('cuotas')}
+          onPay={() => onNav('pagos', null, 'nuevo', op.clientId, op.id)}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: metricGrid, gap: 14 }}>
+        <OperationMetricCard icon="money" label="Costo real" value={formatCurrency(op.costoReal)} color="#475569" bg="#f1f5f9" />
+        <OperationMetricCard icon="card" label="Valor cuota" value={formatCurrency(op.valorCuota)} sub={`${maskSensitiveNumber(op.cantidadCuotas)} cuotas`} color="#2563eb" bg="#dbeafe" />
+        <OperationMetricCard icon="chart" label="Ganancia obtenida" value={formatCurrency(gananciaObtenida)} color="#059669" bg="#dcfce7" />
+        <OperationMetricCard icon="chart" label="Ganancia proyectada" value={formatCurrency(op.gananciaEsperada)} color="#4f46e5" bg="#ede9fe" />
+      </div>
+
+      {false && (<>
       {/* Header */}
       <Card style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-faint)', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</span>
               <StatusBadge status={op.estado} size="md" />
-              <span style={{ fontSize: 12, padding: '2px 8px', background: '#f1f5f9', borderRadius: 6, color: '#475569', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>{op.tipo}</span>
+              <span style={{ fontSize: 12, padding: '2px 8px', background: 'var(--bg-subtle)', borderRadius: 6, color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>{op.tipo}</span>
             </div>
-            <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>{op.descripcion}</h2>
-            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: '#64748b', flexWrap: 'wrap' }}>
+            <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}>{op.descripcion}</h2>
+            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
               <button onClick={() => onNav('clientes', op.clientId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f46e5', fontSize: 13, fontFamily: 'DM Sans, sans-serif', fontWeight: 600, padding: 0 }}>👤 {client?.nombre}</button>
               <span>📅 Inicio: {formatDate(op.fechaInicio)}</span>
               <span>🔢 Primer venc.: {formatDate(op.primerVencimiento)}</span>
@@ -1459,18 +1943,33 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
         <KPICard label="Tot. Esperado" value={formatCurrency(op.totalEsperado)}      accent="blue"                                icon="📊" />
         <KPICard label="Cobrado"       value={formatCurrency(totalPagado)}            accent="green"                               icon="✅" />
         <KPICard label="Saldo P."      value={formatCurrency(saldoPendiente)}         accent={saldoPendiente > 0 ? 'blue' : 'green'} icon="⏳" />
+        <KPICard label="Mora generada" value={formatCurrency(moraGenerada)}           accent="amber"                               icon="%" sub={`Cobrada ${formatCurrency(moraCobrada)}`} />
+        <KPICard label="Total cobrable" value={formatCurrency(totalCobrableActual)}    accent="purple"                              icon="$" sub="saldo + mora" />
         <KPICard label="Gan. Esp."     value={formatCurrency(op.gananciaEsperada)}    accent="purple"                              icon="📈" />
         <KPICard label="V. Cuota"      value={formatCurrency(op.valorCuota)}          accent="slate" sub={`${op.cantidadCuotas} cuotas · ${op.tasaInteres}%`} icon="📋" />
       </div>
 
+      </>)}
+
       {/* Tabs */}
-      <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '0 16px' }}><Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} /></div>
-        <div style={{ padding: 16 }}>
+      <Card style={{ padding: 0, overflow: 'hidden', borderRadius: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 26px rgba(15,23,42,0.05)' }}>
+        <div style={{ padding: '0 16px', overflowX: 'auto' }}><Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} /></div>
+        <div style={{ padding: isMobile ? 12 : 16 }}>
           {activeTab === 'resumen' && (
+            <>
+            <div style={{ display: 'grid', gridTemplateColumns: detailGrid, gap: 16 }}>
+              <FinancialDetailsPanel
+                op={op}
+                totalPagado={totalPagado}
+                saldoPendiente={saldoPendiente}
+                gananciaObtenida={gananciaObtenida}
+              />
+              <InstallmentTimelinePanel installments={opInst} nextInst={nextInst} isMobile={isMobile} />
+            </div>
+            {false && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Detalles financieros</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Detalles financieros</div>
                 {[
                   ['Costo real', formatCurrency(op.costoReal)],
                   ['Monto pactado', formatCurrency(op.montoPactado)],
@@ -1485,13 +1984,13 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
                   ['Fuente', op.fuenteFinanciacion],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f8fafc', fontSize: 13 }}>
-                    <span style={{ color: '#64748b', fontFamily: 'DM Sans, sans-serif' }}>{k}</span>
-                    <span style={{ color: '#0f172a', fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{v}</span>
+                    <span style={{ color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif' }}>{k}</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{v}</span>
                   </div>
                 ))}
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Cronograma</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Cronograma</div>
                 {(() => {
                   const now = new Date(); now.setHours(0,0,0,0);
                   function instStyle(inst) {
@@ -1514,11 +2013,11 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
                         borderLeft: `3px solid ${s.border}`,
                       }}>
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
                           <div style={{ fontSize: 11, color: s.dateColor, fontWeight: s.dateColor !== '#94a3b8' ? 600 : 400 }}>{formatDate(inst.fechaVencimiento)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(inst.montoProgramado)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{formatCurrency(inst.montoProgramado)}</div>
                           <StatusBadge status={inst.estado} />
                         </div>
                       </div>
@@ -1527,6 +2026,8 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
                 })()}
               </div>
             </div>
+            )}
+            </>
           )}
 
           {activeTab === 'cuotas' && (
@@ -1558,7 +2059,7 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
                 { key: 'notas', label: 'Notas' },
                 { key: 'id', label: 'Recibo', render: v => {
                   const rec = data.receipts.find(r => r.paymentId === v);
-                  return rec ? <span style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: '#4f46e5' }}>{rec.codigo}</span> : <span style={{ color: '#94a3b8' }}>—</span>;
+                  return rec ? <span style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: '#4f46e5' }}>{rec.codigo}</span> : <span style={{ color: 'var(--text-faint)' }}>—</span>;
                 }},
               ]}
               data={opPayments}
@@ -1617,16 +2118,26 @@ function OperacionDetalleScreen({ operationId, data, onNav, onDataChange }) {
 }
 
 // Internal Voucher Preview component
-function InternalVoucherPreview({ op, client, voucher, installments }) {
+function InternalVoucherPreview({ op, client, voucher, installments, settings }) {
   if (!op || !client) return <EmptyState title="Sin comprobante" />;
+  const vBranding     = settings?.branding || {};
+  const vPrest        = settings?.datosPrestamista || {};
+  const vFirmante     = vBranding.appName || vPrest.nombre || 'Prestamista';
+  const vTexto        = vPrest.textoComprobantes || 'Uso exclusivo interno. No constituye contrato ni obligación legal.';
+  const vLogoUrl      = vBranding.logoUrl || '';
+  const vInitials     = vBranding.initials || vFirmante.slice(0, 2).toUpperCase();
+  const vAccent       = vBranding.accentColor || '#818cf8';
+  const vMostrarLogo  = vBranding.mostrarLogoEnRecibos !== false;
+  const vCuit         = vPrest.cuit || '';
+  const vMostrarCuit  = !!vBranding.mostrarIdentificacionFiscal;
   const opInst = (installments || []).filter(i => i.operationId === op.id);
   return (
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
-      <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, padding: 28, fontFamily: 'DM Sans, sans-serif' }} id="voucher-print">
+      <div style={{ background: 'var(--bg-page)', border: '1px dashed #cbd5e1', borderRadius: 10, padding: 28, fontFamily: 'DM Sans, sans-serif' }} id="voucher-print">
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '2px dashed #e2e8f0' }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>COMPROBANTE INTERNO DE OPERACIÓN</div>
-          <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Documento de control administrativo</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>COMPROBANTE INTERNO DE OPERACIÓN</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Documento de control administrativo</div>
           <div style={{ marginTop: 8, padding: '6px 12px', background: '#fef9c3', border: '1px solid #fde047', borderRadius: 6, display: 'inline-block', fontSize: 11, color: '#854d0e', fontWeight: 600 }}>
             ⚠️ No constituye contrato ni documento legal
           </div>
@@ -1642,16 +2153,16 @@ function InternalVoucherPreview({ op, client, voucher, installments }) {
             ['Teléfono', client.telefono],
             ['Código operación', op.codigo],
           ].map(([k, v]) => (
-            <div key={k} style={{ padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k}</div>
-              <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, marginTop: 2, fontFamily: 'DM Mono, monospace' }}>{v}</div>
+            <div key={k} style={{ padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: 6, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, marginTop: 2, fontFamily: 'DM Mono, monospace' }}>{v}</div>
             </div>
           ))}
         </div>
 
         {/* Operation details */}
-        <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', padding: 14, marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Detalle de la operación</div>
+        <div style={{ background: 'var(--bg-surface)', borderRadius: 8, border: '1px solid var(--border)', padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Detalle de la operación</div>
           {[
             ['Tipo', op.tipo],
             ['Descripción', op.descripcion],
@@ -1666,8 +2177,8 @@ function InternalVoucherPreview({ op, client, voucher, installments }) {
             ['Fuente de financiación', op.fuenteFinanciacion],
           ].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f8fafc', fontSize: 12 }}>
-              <span style={{ color: '#64748b' }}>{k}</span>
-              <span style={{ color: '#0f172a', fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{v}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{v}</span>
             </div>
           ))}
         </div>
@@ -1675,12 +2186,12 @@ function InternalVoucherPreview({ op, client, voucher, installments }) {
         {/* Schedule */}
         {opInst.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Cronograma de vencimientos</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Cronograma de vencimientos</div>
             {opInst.sort((a, b) => a.numeroCuota - b.numeroCuota).map(i => (
-              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', fontSize: 12, borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ color: '#374151' }}>Cuota {maskSensitiveNumber(i.numeroCuota)}/{maskSensitiveNumber(i.totalCuotas)}</span>
-                <span style={{ color: '#374151' }}>{formatDate(i.fechaVencimiento)}</span>
-                <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(i.montoProgramado)}</span>
+              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Cuota {maskSensitiveNumber(i.numeroCuota)}/{maskSensitiveNumber(i.totalCuotas)}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{formatDate(i.fechaVencimiento)}</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(i.montoProgramado)}</span>
               </div>
             ))}
           </div>
@@ -1688,12 +2199,20 @@ function InternalVoucherPreview({ op, client, voucher, installments }) {
 
         {/* Footer */}
         <div style={{ paddingTop: 16, borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div style={{ fontSize: 10, color: '#94a3b8', maxWidth: 300 }}>
-            Brian Facciano<br />
-            Uso exclusivo interno. No constituye contrato ni obligación legal.
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            {vMostrarLogo && (
+              vLogoUrl
+                ? <img src={vLogoUrl} style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0, marginTop: 2 }} alt="" />
+                : <div style={{ width: 36, height: 36, borderRadius: 8, background: vAccent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, marginTop: 2, letterSpacing: '-0.01em' }}>{vInitials}</div>
+            )}
+            <div style={{ fontSize: 10, color: 'var(--text-faint)', maxWidth: 300 }}>
+              <span style={{ fontWeight: 700, color: 'var(--text-muted)' }}>{vFirmante}</span>
+              {vMostrarCuit && vCuit && <><br />CUIT/DNI: {vCuit}</>}
+              <br />{vTexto}
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ borderTop: '1px solid #374151', paddingTop: 4, fontSize: 10, color: '#64748b', width: 140, textAlign: 'center' }}>Firma prestamista</div>
+            <div style={{ borderTop: '1px solid #374151', paddingTop: 4, fontSize: 10, color: 'var(--text-muted)', width: 140, textAlign: 'center' }}>{vPrest.firma || 'Firma prestamista'}</div>
           </div>
         </div>
       </div>

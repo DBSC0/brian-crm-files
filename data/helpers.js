@@ -1,3 +1,7 @@
+// LEGACY / NO RUNTIME PRODUCTIVO
+// Mantener por compatibilidad historica. La logica financiera nueva vive en
+// core/finance.js y los tests ejecutables viven en tests/finance-core.test.mjs.
+// No agregar helpers nuevos aca.
 // ============================================================
 // HELPERS — Brian CRM Financiero
 // ============================================================
@@ -152,9 +156,13 @@ export function getClientRisk(clientId, installments) {
 }
 
 export function buildWhatsAppUrl(phone, template, replacements) {
+  const allReplacements = { ...replacements };
+  if (allReplacements.cliente && !allReplacements.cliente_informal) {
+    allReplacements.cliente_informal = String(allReplacements.cliente).split(' ')[0];
+  }
   let msg = template;
-  Object.entries(replacements).forEach(([key, val]) => {
-    msg = msg.replace(`{${key}}`, val);
+  Object.entries(allReplacements).forEach(([key, val]) => {
+    msg = msg.replaceAll(`{${key}}`, val);
   });
   const clean = phone.replace(/\D/g, '');
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;

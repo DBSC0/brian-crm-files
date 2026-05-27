@@ -25,7 +25,7 @@ function formatPhone(raw) {
 const ESTADO_OPTIONS = [
   { value: 'Activo',    label: 'Activo',    bg: '#dcfce7', color: '#166534', border: '#86efac' },
   { value: 'Moroso',    label: 'Moroso',    bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
-  { value: 'Bloqueado', label: 'Bloqueado', bg: '#e5e7eb', color: '#374151', border: '#9ca3af' },
+  { value: 'Bloqueado', label: 'Bloqueado', bg: '#e5e7eb', color: 'var(--text-secondary)', border: '#9ca3af' },
   { value: 'Inactivo',  label: 'Inactivo',  bg: '#f3f4f6', color: '#6b7280', border: '#d1d5db' },
 ];
 
@@ -56,10 +56,36 @@ function SegmentedPicker({ value, onChange, options }) {
   );
 }
 
-function ClienteFormModal({ open, onClose, onSave, initial }) {
+async function getNextCode(orgId) {
+  const sb = window.__supabase;
+  const { data } = await sb
+    .from('clients')
+    .select('codigo')
+    .eq('organization_id', orgId)
+    .ilike('codigo', 'CLI-%')
+    .order('codigo', { ascending: false })
+    .limit(1);
+  const lastCode = data?.[0]?.codigo || '';
+  const num = parseInt(lastCode.replace('CLI-', ''), 10);
+  return 'CLI-' + String(isNaN(num) ? 1 : num + 1).padStart(3, '0');
+}
+
+function ClienteFormModal({ open, onClose, onSave, initial, orgId }) {
   const empty = { codigo:'', nombre:'', dni:'', telefono:'', telefonoSecundario:'', direccion:'', ciudad:'Rosario', referencia:'', estado:'Activo', riesgo:'Bajo', notas:'' };
   const [form, setForm] = React.useState(initial || empty);
-  React.useEffect(() => { setForm(initial || empty); }, [open]);
+  const [loadingCode, setLoadingCode] = React.useState(false);
+  React.useEffect(() => {
+    if (open && !initial && orgId) {
+      setForm(empty);
+      setLoadingCode(true);
+      getNextCode(orgId).then(code => {
+        setForm(f => ({ ...f, codigo: code }));
+        setLoadingCode(false);
+      }).catch(() => setLoadingCode(false));
+    } else {
+      setForm(initial || empty);
+    }
+  }, [open]);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [errors, setErrors] = React.useState({});
 
@@ -81,8 +107,15 @@ function ClienteFormModal({ open, onClose, onSave, initial }) {
             <Input value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej. María González" />
           </Field>
         </div>
-        <Field label="Código" hint={initial ? '' : 'Dejar vacío para generar automático'}>
-          <Input value={form.codigo || ''} onChange={e => set('codigo', e.target.value)} placeholder="CLI-001" style={{ fontFamily: 'DM Mono, monospace' }} />
+        <Field label="Código" hint={initial ? '' : undefined}>
+          {initial ? (
+            <Input value={form.codigo || ''} onChange={e => set('codigo', e.target.value)} style={{ fontFamily: 'DM Mono, monospace' }} />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Input value={loadingCode ? 'Generando...' : (form.codigo || '')} readOnly style={{ fontFamily: 'DM Mono, monospace', background: 'var(--bg-page)', color: loadingCode ? '#94a3b8' : '#0f172a', cursor: 'default' }} />
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#eef2ff', color: '#4f46e5', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>AUTO</span>
+            </div>
+          )}
         </Field>
         <Field label="DNI" required error={errors.dni}>
           <Input value={form.dni} onChange={e => set('dni', formatDNI(e.target.value))} placeholder="42.326.470" />
@@ -120,8 +153,22 @@ function ClienteFormModal({ open, onClose, onSave, initial }) {
   );
 }
 
-function ClientesScreen({ data, onNav, onDataChange }) {
-  const { clients, installments, operations, payments } = data;
+function findWATemplate(templates, keyword) {
+  const kw = keyword.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return (templates || []).find(t => (t.nombre || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(kw));
+}
+function applyWATemplate(tpl, vars) {
+  let msg = tpl?.texto || '';
+  const all = { ...vars };
+  if (all.cliente && !all.cliente_informal) all.cliente_informal = String(all.cliente).split(' ')[0];
+  Object.entries(all).forEach(([k, v]) => { msg = msg.replaceAll(`{${k}}`, String(v)); });
+  return msg;
+}
+
+function ClientesScreen({ data, onNav, onDataChange, auth }) {
+  const { clients, installments, operations, payments, settings } = data;
+  const hp = window.hasPermission || (() => true);
+  const saludoTpl = React.useMemo(() => findWATemplate(settings?.plantillasWhatsapp, 'saludo'), [settings]);
   const [search, setSearch] = React.useState('');
   const [filters, setFilters] = React.useState({});
   const [showForm, setShowForm] = React.useState(false);
@@ -137,13 +184,16 @@ function ClientesScreen({ data, onNav, onDataChange }) {
 
   async function handleSave(form) {
     const sb = window.__supabase;
+    const orgId = auth?.currentOrganization?.id;
+    const userId = auth?.user?.id;
     if (editClient) {
-      const { error } = await sb.from('clients').update(toSnake(form)).eq('id', editClient.id);
+      const payload = toSnake({ ...form, updatedBy: userId || undefined });
+      const { error } = await sb.from('clients').update(payload).eq('id', editClient.id);
       if (error) { alert('Error al guardar: ' + error.message); return; }
       onDataChange('clients', data.clients.map(c => c.id === editClient.id ? { ...c, ...form } : c));
     } else {
       const { data: inserted, error } = await sb.from('clients')
-        .insert(toSnake({ ...form, createdAt: new Date().toISOString().slice(0,10) }))
+        .insert(toSnake({ ...form, createdAt: new Date().toISOString().slice(0,10), organizationId: orgId, createdBy: userId || undefined }))
         .select().single();
       if (error) { alert('Error al crear cliente: ' + error.message); return; }
       onDataChange('clients', [...data.clients, toCamel(inserted)]);
@@ -177,9 +227,9 @@ function ClientesScreen({ data, onNav, onDataChange }) {
     { key: '_acciones', label: 'Acciones', sortable: false, render: (_, row) => (
       <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
         <Btn size="sm" variant="ghost" onClick={() => onNav('clientes', row.id)}>Ver</Btn>
-        <Btn size="sm" variant="ghost" onClick={() => { setEditClient(row); setShowForm(true); }}>✏️</Btn>
-        <Btn size="sm" variant="ghost" onClick={() => onNav('operaciones', null, 'nuevo', row.id)}>+ Op</Btn>
-        <WAButton phone={row.telefono} message={`Hola ${row.nombre}!`} />
+        {hp('clients.edit') && <Btn size="sm" variant="ghost" onClick={() => { setEditClient(row); setShowForm(true); }}>✏️</Btn>}
+        {hp('operations.create') && <Btn size="sm" variant="ghost" onClick={() => onNav('operaciones', null, 'nuevo', row.id)}>+ Op</Btn>}
+        <WAButton phone={row.telefono} message={applyWATemplate(saludoTpl, { cliente: row.nombre })} />
       </div>
     )},
   ];
@@ -187,33 +237,33 @@ function ClientesScreen({ data, onNav, onDataChange }) {
   return (
     <div>
       <SectionHeader title="Clientes" actions={
-        <Btn onClick={() => { setEditClient(null); setShowForm(true); }}>+ Nuevo cliente</Btn>
+        hp('clients.create') && <Btn onClick={() => { setEditClient(null); setShowForm(true); }}>+ Nuevo cliente</Btn>
       } />
       <Card>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #f8fafc' }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: 1, maxWidth: 280 }}>
-              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 13 }}>🔍</span>
+              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)', fontSize: 13 }}>🔍</span>
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, DNI, teléfono..." style={{
                 width: '100%', padding: '7px 10px 7px 28px', borderRadius: 8,
-                border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif',
+                border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif',
                 boxSizing: 'border-box', outline: 'none',
               }} />
             </div>
-            <select value={filters.estado || ''} onChange={e => setFilters(f => ({ ...f, estado: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+            <select value={filters.estado || ''} onChange={e => setFilters(f => ({ ...f, estado: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
               <option value="">Todos los estados</option>
               {['Activo','Moroso','Bloqueado','Inactivo'].map(s => <option key={s}>{s}</option>)}
             </select>
-            <select value={filters.riesgo || ''} onChange={e => setFilters(f => ({ ...f, riesgo: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+            <select value={filters.riesgo || ''} onChange={e => setFilters(f => ({ ...f, riesgo: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
               <option value="">Todos los riesgos</option>
               {['Bajo','Medio','Alto'].map(r => <option key={r}>{r}</option>)}
             </select>
-            <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif' }}>{maskSensitiveNumber(filtered.length)} cliente{filtered.length !== 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-faint)', fontFamily: 'DM Sans, sans-serif' }}>{maskSensitiveNumber(filtered.length)} cliente{filtered.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
         <DataTable columns={columns} data={filtered} onRowClick={row => onNav('clientes', row.id)} emptyMessage="No se encontraron clientes" defaultSortKey="codigo" defaultSortDir="asc" tableId="clientes" />
       </Card>
-      <ClienteFormModal open={showForm} onClose={() => { setShowForm(false); setEditClient(null); }} onSave={handleSave} initial={editClient} />
+      <ClienteFormModal open={showForm} onClose={() => { setShowForm(false); setEditClient(null); }} onSave={handleSave} initial={editClient} orgId={auth?.currentOrganization?.id} />
     </div>
   );
 }
@@ -313,7 +363,7 @@ function ClientMetricCard({ icon, label, value, color, bg, onClick }) {
   );
   const style = {
     display: 'flex', alignItems: 'center', gap: 16, padding: '18px 20px',
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14,
+    background: 'var(--bg-surface)', border: '1px solid #e5e7eb', borderRadius: 14,
     boxShadow: '0 8px 22px rgba(15,23,42,0.05)', width: '100%', minWidth: 0,
     fontFamily: 'DM Sans, sans-serif', textAlign: 'left',
   };
@@ -340,7 +390,7 @@ function ClientFinancialSummaryCard({ bal, gananciaObtenida, isMobile }) {
   ];
   return (
     <div style={{
-      position: 'relative', overflow: 'hidden', background: '#fff', border: '1px solid #e5e7eb',
+      position: 'relative', overflow: 'hidden', background: 'var(--bg-surface)', border: '1px solid #e5e7eb',
       borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 26,
     }}>
       <div style={{ position: 'absolute', right: -70, top: -95, width: 260, height: 250, borderRadius: '45%', background: 'rgba(99,102,241,0.12)' }} />
@@ -350,18 +400,18 @@ function ClientFinancialSummaryCard({ bal, gananciaObtenida, isMobile }) {
             <ClientIcon name="chart" color="#4f46e5" size={24} />
           </div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>Resumen financiero</div>
-            <div style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>Capital activo</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>Resumen financiero</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>Capital activo</div>
           </div>
         </div>
-        <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Mono, monospace', lineHeight: 1, marginBottom: 26 }}>
+        <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace', lineHeight: 1, marginBottom: 26 }}>
           {formatCurrency(bal.capitalInvertido)}
         </div>
         <div style={{ height: 1, background: '#e5e7eb', marginBottom: 18 }} />
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: isMobile ? 14 : 0 }}>
           {metrics.map((m, idx) => (
             <div key={m.label} style={{ padding: isMobile ? 0 : '0 18px', borderLeft: !isMobile && idx > 0 ? '1px solid #e5e7eb' : 'none' }}>
-              <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 10 }}>{m.label}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, marginBottom: 10 }}>{m.label}</div>
               <div style={{ fontSize: isMobile ? 17 : 22, color: m.color, fontWeight: 900, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap' }}>{m.value}</div>
             </div>
           ))}
@@ -381,20 +431,20 @@ function ClientStatusCard({ client, bal, overdueInst, nextInst, onViewCuotas, on
     { icon: 'calendar', label: 'Próximo vencimiento', value: nextInst ? `${formatDate(nextInst.fechaVencimiento)} (${nextInst.codigo})` : 'Sin vencimientos', color: nextInst ? '#f97316' : '#64748b' },
   ];
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 24 }}>
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 10px 28px rgba(15,23,42,0.06)', padding: isMobile ? 20 : 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <div style={{ width: 42, height: 42, borderRadius: 12, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: 'var(--bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ClientIcon name="user" color="#0f172a" size={22} />
         </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Estado del cliente</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Estado del cliente</div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 22 }}>
         {statusRows.map(row => (
           <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
             <ClientIcon name={row.icon} color={row.color} size={18} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{row.label}</div>
-              <div style={{ fontSize: 14, color: '#0f172a', fontWeight: 700, marginTop: 3, overflowWrap: 'anywhere' }}>{row.value}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{row.label}</div>
+              <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, marginTop: 3, overflowWrap: 'anywhere' }}>{row.value}</div>
             </div>
           </div>
         ))}
@@ -410,8 +460,10 @@ function ClientStatusCard({ client, bal, overdueInst, nextInst, onViewCuotas, on
 // ============================================================
 // FICHA DE CLIENTE
 // ============================================================
-function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
-  const { clients, operations, installments, payments, receipts, internalOperationVouchers, clientNotes, attachments, creditCards, creditCardMovements } = data;
+function ClienteDetalleScreen({ clientId, data, onNav, onDataChange, auth }) {
+  const hp = window.hasPermission || (() => true);
+  const { clients, operations, installments, payments, receipts, internalOperationVouchers, clientNotes, attachments, creditCards, creditCardMovements, settings } = data;
+  const saludoTpl = React.useMemo(() => findWATemplate(settings?.plantillasWhatsapp, 'saludo'), [settings]);
   const client = clients.find(c => c.id === clientId);
   const [activeTab, setActiveTab] = React.useState('resumen');
   const [showEditForm, setShowEditForm] = React.useState(false);
@@ -427,7 +479,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  if (!client) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Cliente no encontrado.</div>;
+  if (!client) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Cliente no encontrado.</div>;
 
   const clientOps = operations.filter(o => o.clientId === clientId);
   const clientInst = installments.filter(i => i.clientId === clientId);
@@ -474,10 +526,10 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', fontFamily: 'DM Sans, sans-serif' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-faint)', fontFamily: 'DM Sans, sans-serif' }}>
         <button onClick={() => onNav('clientes')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f46e5', fontSize: 12, fontFamily: 'DM Sans, sans-serif' }}>Clientes</button>
         <span>›</span>
-        <span style={{ color: '#374151', fontWeight: 600 }}>{client.nombre}</span>
+        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{client.nombre}</span>
       </div>
 
       <Card style={{ padding: isMobile ? 18 : '22px 26px', borderRadius: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 26px rgba(15,23,42,0.06)' }}>
@@ -491,21 +543,21 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
           }}>{client.nombre[0]}</div>
           <div style={{ flex: '1 1 360px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-              <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Sans, sans-serif', letterSpacing: 0 }}>{client.nombre}</h2>
+              <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif', letterSpacing: 0 }}>{client.nombre}</h2>
               <StatusBadge status={client.estado} size="md" />
               <StatusBadge status={client.riesgo} size="md" />
             </div>
-            <div style={{ display: 'flex', gap: isMobile ? 10 : 18, flexWrap: 'wrap', fontSize: 13, color: '#475569', fontFamily: 'DM Sans, sans-serif', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: isMobile ? 10 : 18, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', alignItems: 'center' }}>
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="note" color="#64748b" size={15} />{client.codigo}</span>
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="user" color="#64748b" size={15} />{client.dni}</span>
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="phone" color="#64748b" size={15} />{client.telefono}</span>
               {client.direccion && <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="shield" color="#64748b" size={15} />{client.direccion}</span>}
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><ClientIcon name="calendar" color="#64748b" size={15} />Cliente desde {formatDate(client.createdAt)}</span>
             </div>
-            {client.notas && <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>"{client.notas}"</div>}
+            {client.notas && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-faint)', fontStyle: 'italic' }}>"{client.notas}"</div>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', flex: isMobile ? '1 1 100%' : '0 1 540px' }}>
-            <WAButton phone={client.telefono} message={`Hola ${client.nombre}!`} size="md" />
+            <WAButton phone={client.telefono} message={applyWATemplate(saludoTpl, { cliente: client.nombre })} size="md" />
             <Btn size="md" variant="secondary" onClick={() => setShowEditForm(true)}><ClientIcon name="edit" color="#374151" size={15} /> Editar</Btn>
             <Btn size="md" onClick={() => onNav('operaciones', null, 'nuevo', clientId)}>+ Operación</Btn>
             <Btn size="md" variant="secondary" onClick={() => onNav('pagos', null, 'nuevo', clientId)}><ClientIcon name="wallet" color="#475569" size={15} /> Registrar pago</Btn>
@@ -546,21 +598,21 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
           }}>{client.nombre[0]}</div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>{client.nombre}</h2>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}>{client.nombre}</h2>
               <StatusBadge status={client.estado} size="md" />
               <StatusBadge status={client.riesgo} size="md" />
             </div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#64748b', fontFamily: 'DM Sans, sans-serif' }}>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif' }}>
               <span>📋 {client.codigo}</span>
               <span>🪪 {client.dni}</span>
               <span>📞 {client.telefono}</span>
               {client.direccion && <span>📍 {client.direccion}</span>}
               <span>📅 Cliente desde {formatDate(client.createdAt)}</span>
             </div>
-            {client.notas && <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>"{client.notas}"</div>}
+            {client.notas && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-faint)', fontStyle: 'italic' }}>"{client.notas}"</div>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <WAButton phone={client.telefono} message={`Hola ${client.nombre}!`} size="md" />
+            <WAButton phone={client.telefono} message={applyWATemplate(saludoTpl, { cliente: client.nombre })} size="md" />
             <Btn size="sm" variant="secondary" onClick={() => setShowEditForm(true)}>✏️ Editar</Btn>
             <Btn size="sm" onClick={() => onNav('operaciones', null, 'nuevo', clientId)}>+ Operación</Btn>
             <Btn size="sm" variant="secondary" onClick={() => onNav('pagos', null, 'nuevo', clientId)}>💳 Registrar pago</Btn>
@@ -575,6 +627,8 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
         <KPICard label="Total esperado"    value={formatCurrency(bal.totalPactado)}     accent="blue"   icon="📊" />
         <KPICard label="Saldo pendiente"   value={formatCurrency(bal.saldoPendiente)}   accent="blue"   icon="⏳" />
         <KPICard label="Monto vencido"     value={formatCurrency(bal.montoVencido)}     accent="red"    icon="⚠️" />
+        <KPICard label="Mora acumulada"    value={formatCurrency(bal.moraAplicada)}     accent="amber"  icon="%" sub="generada" />
+        <KPICard label="Total con mora"    value={formatCurrency(bal.totalCobrableActual)} accent="purple" icon="$" sub="cobrable actual" />
         <KPICard label="Total pagado"      value={formatCurrency(bal.totalPagado)}      accent="green"  icon="✅" />
         <KPICard label="Ganancia esperada" value={formatCurrency(bal.gananciaEsperada)} accent="purple" icon="📈" />
         <KPICard label="Op. activas"       value={bal.opActivas}                        accent="blue"   icon="🔄" sub="operaciones" />
@@ -591,8 +645,8 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
         <div style={{ padding: isMobile ? 12 : 16 }}>
           {activeTab === 'resumen' && (
             <div style={{ display: 'grid', gridTemplateColumns: resumenGrid, gap: 16 }}>
-              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: '#fff' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 12 }}>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: 'var(--bg-surface)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 12 }}>
                   <ClientIcon name="briefcase" color="#2563eb" size={18} /> Operaciones activas
                 </div>
                 {activeOps.length === 0 ? <EmptyState title="Sin operaciones activas" icon="📋" /> :
@@ -605,26 +659,26 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#c7d2fe'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#eef2ff'; }}
                       style={{
-                        width: '100%', padding: '12px 14px', background: '#fff', border: '1px solid #eef2ff',
+                        width: '100%', padding: '12px 14px', background: 'var(--bg-surface)', border: '1px solid #eef2ff',
                         borderRadius: 10, marginBottom: 8, cursor: 'pointer', textAlign: 'left',
                         fontFamily: 'DM Sans, sans-serif', transition: 'background 0.15s, border-color 0.15s',
                         display: 'flex', alignItems: 'center', gap: 12,
                       }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#4f46e5', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</div>
-                        <div style={{ fontSize: 14, color: '#0f172a', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{op.descripcion}</div>
+                        <div style={{ fontSize: 14, color: 'var(--text-primary)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{op.descripcion}</div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(op.totalEsperado)}</div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{maskSensitiveNumber(op.cantidadCuotas)} cuotas</div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(op.totalEsperado)}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{maskSensitiveNumber(op.cantidadCuotas)} cuotas</div>
                       </div>
                       <ClientIcon name="chevron" color="#64748b" size={17} />
                     </button>
                   ))
                 }
               </div>
-              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: '#fff' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 12 }}>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, background: 'var(--bg-surface)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 12 }}>
                   <ClientIcon name="calendar" color="#475569" size={18} /> Cuotas próximas / vencidas
                 </div>
                 {(() => {
@@ -645,11 +699,11 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       <div key={inst.id} style={{ padding: '11px 13px', background: rowBg, borderRadius: 10, marginBottom: 8, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 1fr auto', gap: isMobile ? 8 : 12, alignItems: 'center', borderLeft: `3px solid ${isOverdue ? '#dc2626' : '#4f46e5'}` }}>
                         <div>
                           <span style={{ fontSize: 13, color: '#4f46e5', fontWeight: 900, fontFamily: 'DM Mono, monospace' }}>{inst.codigo}</span>
-                          <span style={{ fontSize: 12, color: '#64748b', marginLeft: 8 }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
                         </div>
                         <div style={{ fontSize: 12, color: isOverdue ? '#dc2626' : '#64748b', fontWeight: isOverdue ? 800 : 600 }}>Vence: {formatDate(inst.fechaVencimiento)}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
-                          <span style={{ fontSize: 14, fontWeight: 900, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(inst.saldoPendiente)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 900, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{formatCurrency(inst.saldoPendiente)}</span>
                           <StatusBadge status={inst.estado} />
                         </div>
                       </div>
@@ -663,7 +717,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
           {false && activeTab === 'resumen' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Operaciones activas</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Operaciones activas</div>
                 {clientOps.filter(o => o.estado === 'Activa').length === 0 ? <EmptyState title="Sin operaciones activas" icon="📋" /> :
                   clientOps.filter(o => o.estado === 'Activa').map(op => (
                     <button
@@ -676,7 +730,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       style={{
                         width: '100%',
                         padding: '10px 14px',
-                        background: '#f8fafc',
+                        background: 'var(--bg-page)',
                         border: '1px solid transparent',
                         borderRadius: 8,
                         marginBottom: 8,
@@ -688,11 +742,11 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <span style={{ fontSize: 12, fontWeight: 700, color: '#4f46e5', fontFamily: 'DM Mono, monospace' }}>{op.codigo}</span>
-                          <div style={{ fontSize: 13, color: '#374151', marginTop: 2 }}>{op.descripcion}</div>
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{op.descripcion}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(op.totalEsperado)}</div>
-                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{op.cantidadCuotas} cuotas</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{formatCurrency(op.totalEsperado)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{op.cantidadCuotas} cuotas</div>
                         </div>
                       </div>
                     </button>
@@ -700,7 +754,7 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                 }
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Cuotas próximas / vencidas</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Cuotas próximas / vencidas</div>
                 {(() => {
                   const now = new Date(); now.setHours(0,0,0,0);
                   function instStyle(inst) {
@@ -720,11 +774,11 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
                       return (
                         <div key={inst.id} style={{ padding: '8px 12px', background: s.bg, borderRadius: 8, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: `3px solid ${s.border}` }}>
                           <div>
-                            <span style={{ fontSize: 11, color: '#64748b' }}>{inst.codigo} · Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{inst.codigo} · Cuota {maskSensitiveNumber(inst.numeroCuota)}/{maskSensitiveNumber(inst.totalCuotas)}</span>
                             <div style={{ fontSize: 12, color: s.dateColor, fontWeight: s.dateBold ? 600 : 400 }}>Vence: {formatDate(inst.fechaVencimiento)}</div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#0f172a' }}>{formatCurrency(inst.saldoPendiente)}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{formatCurrency(inst.saldoPendiente)}</span>
                             <StatusBadge status={inst.estado} />
                           </div>
                         </div>
@@ -830,8 +884,8 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
           {activeTab === 'notas' && (
             <div>
               {showNoteForm && (
-                <Card style={{ padding: 16, marginBottom: 16, background: '#f8fafc' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 12, fontFamily: 'DM Sans, sans-serif' }}>Nueva nota</div>
+                <Card style={{ padding: 16, marginBottom: 16, background: 'var(--bg-page)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, fontFamily: 'DM Sans, sans-serif' }}>Nueva nota</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <Field label="Tipo">
                       <Select value={newNote.tipo} onChange={e => setNewNote(n => ({ ...n, tipo: e.target.value }))}>
@@ -856,12 +910,12 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
               {!showNoteForm && <div style={{ marginBottom: 12 }}><Btn size="sm" onClick={() => setShowNoteForm(true)}>+ Agregar nota</Btn></div>}
               {clientNotesData.length === 0 ? <EmptyState title="Sin notas" icon="📝" sub="Agregá notas de contacto para registrar el historial." /> :
                 [...clientNotesData].sort((a, b) => b.fecha.localeCompare(a.fecha)).map(note => (
-                  <div key={note.id} style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: 8, marginBottom: 8, borderLeft: '3px solid #6366f1' }}>
+                  <div key={note.id} style={{ padding: '12px 14px', background: 'var(--bg-page)', borderRadius: 8, marginBottom: 8, borderLeft: '3px solid #6366f1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{note.tipo}</span>
-                      <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{formatDate(note.fecha)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: 'DM Mono, monospace' }}>{formatDate(note.fecha)}</span>
                     </div>
-                    <div style={{ fontSize: 13, color: '#374151', fontFamily: 'DM Sans, sans-serif' }}>{note.contenido}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif' }}>{note.contenido}</div>
                     {note.recordatorio && <div style={{ fontSize: 11, color: '#d97706', marginTop: 4 }}>⏰ Recordatorio: {formatDate(note.recordatorio)}</div>}
                   </div>
                 ))
@@ -877,12 +931,12 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
               {clientAttachments.length === 0 ? <EmptyState title="Sin archivos" icon="📁" sub="Subí comprobantes o documentos del cliente." /> :
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
                   {clientAttachments.map(att => (
-                    <div key={att.id} style={{ padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                    <div key={att.id} style={{ padding: 14, background: 'var(--bg-page)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 24, marginBottom: 8 }}>📄</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{att.nombreArchivo}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{att.tipo}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatDate(att.fecha)}</div>
-                      {att.descripcion && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, fontStyle: 'italic' }}>{att.descripcion}</div>}
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>{att.nombreArchivo}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>{att.tipo}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{formatDate(att.fecha)}</div>
+                      {att.descripcion && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>{att.descripcion}</div>}
                     </div>
                   ))}
                 </div>
@@ -893,8 +947,10 @@ function ClienteDetalleScreen({ clientId, data, onNav, onDataChange }) {
       </Card>
 
       <ClienteFormModal open={showEditForm} onClose={() => setShowEditForm(false)} onSave={async form => {
+        if (!hp('clients.edit')) { alert('No tenés permiso para editar clientes.'); return; }
         const sb = window.__supabase;
-        const { error } = await sb.from('clients').update(toSnake(form)).eq('id', clientId);
+        const userId = auth?.user?.id;
+        const { error } = await sb.from('clients').update(toSnake({ ...form, updatedBy: userId || undefined })).eq('id', clientId);
         if (error) { alert('Error al guardar: ' + error.message); return; }
         onDataChange('clients', data.clients.map(c => c.id === clientId ? { ...c, ...form } : c));
         setShowEditForm(false);

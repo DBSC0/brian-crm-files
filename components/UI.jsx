@@ -26,20 +26,20 @@ function Modal({ open, onClose, title, children, size = 'md', footer }) {
       padding: 16,
     }} onClick={(e) => e.target === e.currentTarget && handleClose()}>
       <div style={{
-        background: '#fff', borderRadius: 12, width: w, maxWidth: '100%',
+        background: 'var(--bg-surface)', borderRadius: 12, width: w, maxWidth: '100%',
         maxHeight: '90vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 24px 80px rgba(15,23,42,0.22)',
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '18px 24px', borderBottom: '1px solid #f1f5f9',
+          padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0,
         }}>
-          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>{title}</h3>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}>{title}</h3>
           <button onClick={handleClose} style={{
-            border: 'none', background: '#f1f5f9', borderRadius: 8,
+            border: 'none', background: 'var(--bg-subtle)', borderRadius: 8,
             width: 32, height: 32, cursor: 'pointer', fontSize: 16,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)',
           }}>✕</button>
         </div>
         <div style={{ overflowY: 'auto', flex: 1, padding: '20px 24px' }}>
@@ -47,7 +47,7 @@ function Modal({ open, onClose, title, children, size = 'md', footer }) {
         </div>
         {footer && (
           <div style={{
-            padding: '14px 24px', borderTop: '1px solid #f1f5f9',
+            padding: '14px 24px', borderTop: '1px solid var(--border-subtle)',
             display: 'flex', gap: 10, justifyContent: 'flex-end', flexShrink: 0,
           }}>
             {footer}
@@ -63,21 +63,21 @@ function Modal({ open, onClose, title, children, size = 'md', footer }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }} onClick={e => e.stopPropagation()}>
           <div style={{
-            background: '#fff', borderRadius: 12, padding: '28px 32px',
+            background: 'var(--bg-surface)', borderRadius: 12, padding: '28px 32px',
             boxShadow: '0 24px 80px rgba(15,23,42,0.22)',
             maxWidth: 360, width: '100%', textAlign: 'center',
           }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', marginBottom: 8, fontFamily: 'DM Sans, sans-serif' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, fontFamily: 'DM Sans, sans-serif' }}>
               ¿Cerrar sin guardar?
             </div>
-            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 24, fontFamily: 'DM Sans, sans-serif' }}>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24, fontFamily: 'DM Sans, sans-serif' }}>
               Vas a perder los cambios que no guardaste.
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button onClick={cancelClose} style={{
-                padding: '9px 20px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                background: '#fff', color: '#374151', fontWeight: 600, fontSize: 13,
+                padding: '9px 20px', borderRadius: 8, border: '1.5px solid var(--border)',
+                background: 'var(--bg-surface)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 13,
                 cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
               }}>
                 Seguir editando
@@ -102,12 +102,12 @@ function Field({ label, required, error, children, hint }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {label && (
-        <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           {label}{required && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
         </label>
       )}
       {children}
-      {hint && <span style={{ fontSize: 11, color: '#94a3b8' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{hint}</span>}
       {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
     </div>
   );
@@ -120,13 +120,13 @@ function Input({ value, onChange, placeholder, type = 'text', style: extraStyle,
       type={type} value={value} onChange={onChange} placeholder={placeholder}
       disabled={disabled} {...rest}
       style={{
-        padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-        fontSize: 14, color: '#0f172a', outline: 'none', background: disabled ? '#f8fafc' : '#fff',
+        padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)',
+        fontSize: 14, color: 'var(--text-primary)', outline: 'none', background: disabled ? 'var(--bg-page)' : 'var(--bg-surface)',
         fontFamily: 'DM Sans, sans-serif', width: '100%', boxSizing: 'border-box',
         transition: 'border-color 0.15s', ...extraStyle,
       }}
       onFocus={e => { e.target.style.borderColor = '#6366f1'; }}
-      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; }}
+      onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
     />
   );
 }
@@ -137,8 +137,8 @@ function Select({ value, onChange, children, style: extraStyle, disabled }) {
     <select
       value={value} onChange={onChange} disabled={disabled}
       style={{
-        padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-        fontSize: 14, color: '#0f172a', outline: 'none', background: disabled ? '#f8fafc' : '#fff',
+        padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)',
+        fontSize: 14, color: 'var(--text-primary)', outline: 'none', background: disabled ? 'var(--bg-page)' : 'var(--bg-surface)',
         fontFamily: 'DM Sans, sans-serif', width: '100%', boxSizing: 'border-box',
         cursor: 'pointer', ...extraStyle,
       }}
@@ -154,13 +154,13 @@ function Textarea({ value, onChange, placeholder, rows = 3 }) {
     <textarea
       value={value} onChange={onChange} placeholder={placeholder} rows={rows}
       style={{
-        padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-        fontSize: 14, color: '#0f172a', outline: 'none', background: '#fff',
+        padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)',
+        fontSize: 14, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-surface)',
         fontFamily: 'DM Sans, sans-serif', width: '100%', boxSizing: 'border-box',
         resize: 'vertical',
       }}
       onFocus={e => { e.target.style.borderColor = '#6366f1'; }}
-      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; }}
+      onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
     />
   );
 }
@@ -169,10 +169,10 @@ function Textarea({ value, onChange, placeholder, rows = 3 }) {
 function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, style: extraStyle, type = 'button' }) {
   const variants = {
     primary: { bg: '#4f46e5', color: '#fff', border: '#4f46e5', hover: '#4338ca' },
-    secondary: { bg: '#fff', color: '#374151', border: '#e2e8f0', hover: '#f8fafc' },
+    secondary: { bg: 'var(--bg-surface)', color: 'var(--text-secondary)', border: 'var(--border)', hover: 'var(--bg-page)' },
     danger: { bg: '#fee2e2', color: '#991b1b', border: '#fecaca', hover: '#fecaca' },
     success: { bg: '#dcfce7', color: '#166534', border: '#bbf7d0', hover: '#bbf7d0' },
-    ghost: { bg: 'transparent', color: '#64748b', border: 'transparent', hover: '#f1f5f9' },
+    ghost: { bg: 'transparent', color: 'var(--text-muted)', border: 'transparent', hover: 'var(--bg-subtle)' },
   };
   const v = variants[variant] || variants.primary;
   const pad = size === 'sm' ? '5px 12px' : size === 'lg' ? '11px 24px' : '8px 16px';
@@ -203,14 +203,14 @@ function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, st
 function Tabs({ tabs, active, onChange }) {
   return (
     <div style={{
-      display: 'flex', gap: 2, borderBottom: '1px solid #e2e8f0',
+      display: 'flex', gap: 2, borderBottom: '1px solid var(--border)',
       overflowX: 'auto', flexShrink: 0,
     }}>
       {tabs.map(tab => (
         <button key={tab.id} onClick={() => onChange(tab.id)} style={{
           padding: '10px 16px', border: 'none', background: 'none',
           fontSize: 13, fontWeight: active === tab.id ? 700 : 500,
-          color: active === tab.id ? '#4f46e5' : '#64748b',
+          color: active === tab.id ? '#4f46e5' : 'var(--text-muted)',
           borderBottom: active === tab.id ? '2px solid #4f46e5' : '2px solid transparent',
           cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif',
           transition: 'all 0.15s',
@@ -218,8 +218,8 @@ function Tabs({ tabs, active, onChange }) {
           {tab.label}
           {tab.count != null && (
             <span style={{
-              marginLeft: 6, padding: '1px 6px', background: active === tab.id ? '#eef2ff' : '#f1f5f9',
-              color: active === tab.id ? '#4f46e5' : '#94a3b8', borderRadius: 10, fontSize: 10, fontWeight: 700,
+              marginLeft: 6, padding: '1px 6px', background: active === tab.id ? '#eef2ff' : 'var(--bg-subtle)',
+              color: active === tab.id ? '#4f46e5' : 'var(--text-faint)', borderRadius: 10, fontSize: 10, fontWeight: 700,
             }}>{tab.count}</span>
           )}
         </button>
@@ -232,7 +232,7 @@ function Tabs({ tabs, active, onChange }) {
 function Card({ children, style: extraStyle }) {
   return (
     <div style={{
-      background: '#fff', borderRadius: 12, border: '1px solid #f1f5f9',
+      background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border-subtle)',
       boxShadow: '0 1px 4px rgba(15,23,42,0.06)', ...extraStyle,
     }}>
       {children}
@@ -257,7 +257,7 @@ function KPICard({ label, value, sub, accent, icon, trend }) {
   return (
     <Card style={{ padding: '16px 20px', minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.4 }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.4 }}>{label}</span>
         {icon && (
           <div style={{
             width: 30, height: 30, borderRadius: '50%', background: bg,
@@ -267,7 +267,7 @@ function KPICard({ label, value, sub, accent, icon, trend }) {
         )}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700, color: c, fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{displayValue}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{displaySub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>{displaySub}</div>}
     </Card>
   );
 }
@@ -275,9 +275,9 @@ function KPICard({ label, value, sub, accent, icon, trend }) {
 // Empty State
 function EmptyState({ icon = '📭', title, sub }) {
   return (
-    <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+    <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-faint)' }}>
       <div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>{title}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>{title}</div>
       {sub && <div style={{ fontSize: 13 }}>{sub}</div>}
     </div>
   );
@@ -303,7 +303,7 @@ function WAButton({ phone, message, size = 'sm' }) {
 function SectionHeader({ title, actions }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Sans, sans-serif' }}>{title}</h2>
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}>{title}</h2>
       {actions && <div style={{ display: 'flex', gap: 8 }}>{actions}</div>}
     </div>
   );
@@ -384,7 +384,7 @@ function DataTable({ columns, data, onRowClick, emptyMessage = 'Sin datos', defa
     <div style={{ overflowX: 'auto' }}>
       <table ref={tableRef} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: 'DM Sans, sans-serif', tableLayout: hasWidths ? 'fixed' : 'auto' }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
             {columns.map((col, colIndex) => {
               const isSortable = col.sortable !== false;
               const isActive = sortKey === col.key;
@@ -392,9 +392,9 @@ function DataTable({ columns, data, onRowClick, emptyMessage = 'Sin datos', defa
               return (
                 <th key={col.key} style={{
                   padding: '9px 12px', textAlign: 'left', fontSize: 11,
-                  fontWeight: 700, color: isActive ? '#4f46e5' : '#94a3b8',
+                  fontWeight: 700, color: isActive ? '#4f46e5' : 'var(--text-faint)',
                   textTransform: 'uppercase', letterSpacing: '0.05em',
-                  whiteSpace: 'nowrap', background: '#f8fafc',
+                  whiteSpace: 'nowrap', background: 'var(--bg-page)',
                   position: 'relative', userSelect: 'none',
                   width: colWidths[col.key] || undefined,
                 }}>
@@ -414,13 +414,13 @@ function DataTable({ columns, data, onRowClick, emptyMessage = 'Sin datos', defa
             return (
             <tr key={i}
               onClick={() => onRowClick && onRowClick(row)}
-              style={{ borderBottom: '1px solid #f1f5f9', cursor: onRowClick ? 'pointer' : 'default', transition: 'background 0.1s', ...rs }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; }}
+              style={{ borderBottom: '1px solid var(--border-subtle)', cursor: onRowClick ? 'pointer' : 'default', transition: 'background 0.1s', ...rs }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-page)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = rs.background || ''; }}
             >
               {columns.map(col => (
                 <td key={col.key} style={{
-                  padding: '10px 12px', color: col.mono ? '#475569' : '#1e293b',
+                  padding: '10px 12px', color: col.mono ? 'var(--text-muted)' : 'var(--text-primary)',
                   fontFamily: col.mono ? 'DM Mono, monospace' : 'DM Sans, sans-serif',
                   fontSize: col.mono ? 12 : 13, whiteSpace: col.nowrap ? 'nowrap' : 'normal',
                   overflow: hasWidths ? 'hidden' : undefined, textOverflow: hasWidths ? 'ellipsis' : undefined,
@@ -447,8 +447,8 @@ function FilterBar({ filters, values, onChange }) {
         if (f.type === 'select') {
           return (
             <select key={f.key} value={values[f.key] || ''} onChange={e => onChange(f.key, e.target.value)} style={{
-              padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-              fontSize: 13, color: '#374151', background: '#fff', cursor: 'pointer',
+              padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)',
+              fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-surface)', cursor: 'pointer',
               fontFamily: 'DM Sans, sans-serif', minWidth: 120,
             }}>
               <option value="">{f.placeholder || f.label}</option>
@@ -460,8 +460,8 @@ function FilterBar({ filters, values, onChange }) {
           return (
             <input key={f.key} value={values[f.key] || ''} onChange={e => onChange(f.key, e.target.value)}
               placeholder={f.placeholder || f.label} style={{
-                padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                fontSize: 13, color: '#374151', background: '#fff',
+                padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)',
+                fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-surface)',
                 fontFamily: 'DM Sans, sans-serif', minWidth: 160,
               }} />
           );
@@ -470,8 +470,8 @@ function FilterBar({ filters, values, onChange }) {
       })}
       {Object.values(values).some(v => v) && (
         <button onClick={() => filters.forEach(f => onChange(f.key, ''))} style={{
-          padding: '6px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-          fontSize: 12, color: '#64748b', background: '#f8fafc', cursor: 'pointer',
+          padding: '6px 12px', borderRadius: 8, border: '1.5px solid var(--border)',
+          fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-page)', cursor: 'pointer',
           fontFamily: 'DM Sans, sans-serif',
         }}>✕ Limpiar</button>
       )}
@@ -490,7 +490,7 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel =
           </Btn>
         </>
       }>
-      <p style={{ fontSize: 14, color: '#374151', margin: 0, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.6 }}>{message}</p>
+      <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.6 }}>{message}</p>
     </Modal>
   );
 }

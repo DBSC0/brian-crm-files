@@ -6,8 +6,12 @@
   "scripts": {
     "start": "SET ELECTRON_RUN_AS_NODE=&& electron .",
     "server": "npx serve . -l 6767",
+    "validate": "npm run validate:jsx && npm run validate:sql && npm run test:finance",
+    "validate:jsx": "node scripts/validate-jsx.mjs",
+    "validate:sql": "node scripts/validate-sql.mjs",
+    "test:finance": "node tests/finance-core.test.mjs",
     "build": "SET ELECTRON_RUN_AS_NODE=&& SET CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win --x64",
-    "android:prepare": "xcopy /E /Y /I index.html www\\index.html && xcopy /E /Y /I components www\\components\\ && xcopy /E /Y /I screens www\\screens\\ && xcopy /E /Y /I data www\\data\\",
+    "android:prepare": "xcopy /E /Y /I index.html www\\index.html && xcopy /E /Y /I core www\\core\\ && xcopy /E /Y /I components www\\components\\ && xcopy /E /Y /I screens www\\screens\\ && xcopy /E /Y /I data www\\data\\",
     "android:sync": "npm run android:prepare && npx cap sync android",
     "android:open": "npx cap open android"
   },

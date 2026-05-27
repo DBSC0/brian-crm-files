@@ -1,3 +1,6 @@
+// LEGACY / NO RUNTIME PRODUCTIVO
+// Dataset historico/mock. La app real carga Supabase desde index.html/CRMData.
+// No usar como fuente de verdad financiera ni para tests nuevos.
 // ============================================================
 // MOCK DATA — Brian CRM Financiero
 // ============================================================
